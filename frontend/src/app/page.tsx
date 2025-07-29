@@ -29,18 +29,18 @@ const HeroVideoBackground = () => {
         muted
         loop
         playsInline
-        className="absolute top-[15%] left-0 w-full h-[85%] object-cover opacity-80"
+        className="absolute top-[1%] left-0 w-full h-[99%] object-cover opacity-98"
       >
         <source src="/bg.mp4" type="video/mp4" />
       </video>
       
       {/* Dark overlay for better text readability */}
-      <div className="absolute inset-0 bg-black/20" />
+      <div className="absolute inset-0 bg-black/10" />
       
       {/* Existing gradient overlays */}
-      <div className="absolute inset-0 bg-gradient-to-br from-black/40 via-neutral-950/20 to-black/40" />
-      <div className="mesh-gradient-1 absolute inset-0 opacity-40" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-br from-black/30 via-neutral-950/10 to-black/30" />
+      <div className="mesh-gradient-1 absolute inset-0 opacity-30" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
     </div>
   );
 };
@@ -49,7 +49,7 @@ const UniteDefiLanding = () => {
   const stats = [
     { label: 'Chains Supported', value: '15+', color: 'from-orange-400 to-red-400' },
     { label: 'Total Volume', value: '$5.2B+', color: 'from-red-400 to-orange-500' },
-    { label: 'Transactions', value: '2.5M+', color: 'from-orange-500 to-red-500' },
+    { label: 'Transactions', value: '2M', color: 'from-orange-500 to-red-500' },
     { label: 'Gas Savings', value: '45%', color: 'from-red-300 to-orange-400' }
   ];
 
@@ -146,7 +146,7 @@ const UniteDefiLanding = () => {
               Revolutionary Features
             </h2>
             <p className="text-lg text-neutral-400 max-w-3xl mx-auto font-light font-[family-name:var(--font-spline-sans-mono)]">
-              Built with cutting-edge technology for the next generation of <span className="text-orange-400 font-semibold">cross-chain DeFi</span>
+              Built with cutting-edge technology for the next generation of <span className="text-orange-400 font-semibold">crosschain DeFi</span>
             </p>
           </div>
 
@@ -178,7 +178,7 @@ const UniteDefiLanding = () => {
 
       {/* Interactive Demo Section */}
       <section id="demo" className="relative z-10 px-6 py-32">
-        <div className="mesh-gradient-3 absolute inset-0 opacity-30"></div>
+        <div className="mesh-gradient-1 absolute inset-0 opacity-30"></div>
         <div className="relative">
           <InteractiveDemo />
         </div>

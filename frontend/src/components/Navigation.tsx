@@ -17,8 +17,7 @@ const Navigation: React.FC<NavigationProps> = ({ isConnected = false, onConnectW
   const navItems = [
     { href: '/', label: 'Home' },
     { href: '/swap', label: 'Swap', icon: <ArrowUpDown className="w-4 h-4" /> },
-    { href: '/analytics', label: 'Analytics' },
-    { href: '/docs', label: 'Docs' },
+    { href: '#demo', label: 'Demo', icon: <ArrowUpDown className="w-4 h-4" /> },
   ];
 
   const isActive = (href: string) => pathname === href;
@@ -59,10 +58,7 @@ const Navigation: React.FC<NavigationProps> = ({ isConnected = false, onConnectW
 
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center space-x-6">
-          <Button variant="outline" size="sm">
-            <ExternalLink className="w-4 h-4 mr-2" />
-            Docs
-          </Button>
+          
           
           <Button
             variant={isConnected ? 'secondary' : 'gradient'}
