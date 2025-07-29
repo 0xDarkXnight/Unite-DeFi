@@ -47,122 +47,132 @@ const FusionTimeline: React.FC = () => {
         'Competitive bidding ensures best price for user'
       ],
       icon: <Gavel className="w-6 h-6" />,
-      color: 'from-purple-500 to-pink-500',
+      color: 'from-orange-500 to-yellow-500',
       status: activePhase === 'auction' ? 'active' : 'completed'
     },
     {
       id: 'deposit',
-      title: 'Deposit Phase (Escrow Setup)',
-      subtitle: 'Cross-Chain Escrow Contracts',
-      description: 'When a resolver wins the auction, they begin on-chain execution by setting up two escrow smart contracts - one on each chain.',
+      title: 'Deposit Phase',
+      subtitle: 'Hash Time-Locked Contract',
+      description: 'The winning resolver deposits the destination token into a Hash Time-Locked Contract (HTLC) on the destination chain, using the hash of the user\'s secret.',
       details: [
-        'Resolver uses 1inch Limit Order Protocol to fill user\'s order',
-        'EscrowSrc contract deployed on source chain with hashlock and timelock',
-        'User\'s tokens moved into EscrowSrc with safety deposit as collateral',
-        'EscrowDst contract deployed on destination chain with same parameters',
-        'Resolver deposits their tokens for user\'s benefit in EscrowDst',
-        'Both escrows cryptographically linked by secret hash'
+        'Resolver wins auction with best offer',
+        'Resolver deposits destination tokens into HTLC',
+        'Contract locked with user\'s secret hash',
+        'Timelock T1 prevents indefinite locking',
+        'User has exclusive access with secret knowledge'
       ],
       icon: <Lock className="w-6 h-6" />,
-      color: 'from-blue-500 to-cyan-500',
+      color: 'from-yellow-500 to-orange-500',
       status: activePhase === 'deposit' ? 'active' : activePhase === 'auction' ? 'pending' : 'completed'
     },
     {
       id: 'withdrawal',
-      title: 'Withdrawal Phase (Secret Reveal)',
-      subtitle: 'Atomic Swap Execution',
-      description: 'Once both escrows are in place, the user\'s dApp reveals the secret to enable the atomic swap of assets.',
+      title: 'Withdrawal Phase',
+      subtitle: 'Secret Reveal & Atomic Swap',
+      description: 'User withdraws destination tokens by revealing the secret, which simultaneously enables resolver to claim source tokens, completing the atomic swap.',
       details: [
-        'User\'s dApp confirms both escrows are locked and funded',
-        'Secret (preimage of hash) is revealed to resolver/relayer',
-        'Resolver uses secret to unlock EscrowDst on destination chain',
-        'Destination tokens released to user\'s address',
-        'Same secret allows resolver to claim tokens from EscrowSrc',
-        'Resolver withdraws user\'s original tokens, completing the swap',
-        'Safety deposits refunded to resolver for successful completion'
+        'User reveals secret to unlock destination tokens',
+        'Secret becomes publicly visible on blockchain',
+        'Resolver uses revealed secret to claim source tokens',
+        'Atomic swap completed trustlessly',
+        'Both parties receive their desired tokens'
       ],
       icon: <Eye className="w-6 h-6" />,
-      color: 'from-green-500 to-emerald-500',
+      color: 'from-orange-600 to-yellow-400',
       status: activePhase === 'withdrawal' ? 'active' : ['auction', 'deposit'].includes(activePhase) ? 'pending' : 'completed'
     },
     {
       id: 'recovery',
-      title: 'Recovery Phase (Safety Timeouts)',
-      subtitle: 'Timeout & Refund Mechanisms',
-      description: 'Fusion+ includes safety timeouts to handle cases where something goes wrong or parties become unresponsive.',
+      title: 'Recovery Phase',
+      subtitle: 'Timeout & Safety Mechanisms',
+      description: 'If the user fails to reveal the secret within timelock T1, resolver can recover their deposit. If resolver fails to deposit within T2, user\'s order expires safely.',
       details: [
-        'Each escrow has time windows for completion',
-        'If resolver doesn\'t unlock user funds on destination chain, other resolvers can step in',
-        'Alternative resolvers can use revealed secret to complete swap and claim safety deposit',
-        'If no completion within allotted time, contracts allow cancellation',
-        'After time T2: original resolver can reclaim destination tokens',
-        'After time T1 (T1 > T2): user can reclaim original tokens from source',
-        'Staggered timeouts ensure resolver funds timeout first, incentivizing completion',
-        'Atomicity preserved: either both parties get desired assets or original assets back'
+        'Timelock T1: User must reveal secret within time limit',
+        'Timelock T2: Resolver must deposit within deadline',
+        'Automatic recovery mechanisms prevent fund loss',
+        'Staggered timeouts incentivize completion',
+        'Cryptographic guarantees ensure security'
       ],
-      icon: <Clock className="w-6 h-6" />,
-      color: 'from-orange-500 to-red-500',
+      icon: <RefreshCw className="w-6 h-6" />,
+      color: 'from-yellow-600 to-orange-600',
       status: activePhase === 'recovery' ? 'active' : 'pending'
     }
   ];
-
-  const getPhaseProgress = (phaseId: string): number => {
-    const currentIndex = phases.findIndex(p => p.id === activePhase);
-    const phaseIndex = phases.findIndex(p => p.id === phaseId);
-    
-    if (phaseIndex < currentIndex) return 100;
-    if (phaseIndex === currentIndex) return 75;
-    return 0;
-  };
 
   const handlePhaseClick = (phaseId: string) => {
     setActivePhase(phaseId);
     setAnimationKey(prev => prev + 1);
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle2 className="w-5 h-5 text-orange-400" />;
+      case 'active':
+        return <Zap className="w-5 h-5 text-yellow-400 animate-pulse" />;
+      default:
+        return <Clock className="w-5 h-5 text-neutral-400" />;
+    }
+  };
+
+  const getProgressValue = () => {
+    const phaseIndex = phases.findIndex(p => p.id === activePhase);
+    return ((phaseIndex + 1) / phases.length) * 100;
+  };
+
   return (
-    <div className="w-full max-w-7xl mx-auto p-6">
-      <div className="text-center mb-12">
-        <h2 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 bg-clip-text text-transparent mb-4">
-          How Fusion+ Cross-Chain Swaps Work
+    <div className="w-full max-w-6xl mx-auto p-4 space-y-8 bg-black">
+      {/* Header */}
+      <div className="text-center">
+        <h2 className="text-3xl md:text-4xl font-black mb-4 bg-gradient-to-r from-orange-400 via-yellow-400 to-orange-400 bg-clip-text text-transparent font-[family-name:var(--font-unbounded)]">
+          How Fusion+ Works
         </h2>
-        <p className="text-xl text-slate-400 max-w-3xl mx-auto">
-          Understanding the Hash Time-Locked Contract (HTLC) based atomic swap mechanism
+        <p className="text-lg text-neutral-300 max-w-3xl mx-auto mb-6 font-[family-name:var(--font-spline-sans-mono)]">
+          Revolutionary <span className="text-orange-400 font-semibold">cross-chain swap mechanism</span> combining 
+          Dutch auctions with Hash Time-Locked Contracts
         </p>
+        
+        {/* Progress Bar */}
+        <div className="max-w-xl mx-auto mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium text-neutral-400 font-[family-name:var(--font-spline-sans-mono)]">Progress</span>
+            <span className="text-xs font-medium text-orange-400 font-[family-name:var(--font-spline-sans-mono)]">
+              {Math.round(getProgressValue())}% Complete
+            </span>
+          </div>
+          <Progress value={getProgressValue()} className="h-2" />
+        </div>
       </div>
 
       {/* Timeline Navigation */}
-      <div className="relative mb-12">
-        <div className="absolute top-1/2 left-0 right-0 h-1 bg-gradient-to-r from-purple-500/20 via-cyan-500/20 to-orange-500/20 rounded-full transform -translate-y-1/2" />
-        
-        <div className="flex justify-between relative z-10">
-          {phases.map((phase, index) => (
-            <motion.button
-              key={phase.id}
-              onClick={() => handlePhaseClick(phase.id)}
-              className={`flex flex-col items-center group cursor-pointer ${
-                activePhase === phase.id ? 'scale-110' : 'scale-100'
-              }`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${phase.color} flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 mb-3 ${
-                activePhase === phase.id ? 'ring-4 ring-white/30' : ''
-              }`}>
+      <div className="grid md:grid-cols-4 gap-3 mb-8">
+        {phases.map((phase, index) => (
+          <motion.button
+            key={phase.id}
+            onClick={() => handlePhaseClick(phase.id)}
+            className={`p-3 rounded-xl text-left transition-all duration-300 border ${
+              activePhase === phase.id
+                ? 'bg-gradient-to-r from-orange-900/40 to-yellow-900/40 border-orange-500/50'
+                : 'bg-black/60 border-neutral-800/50 hover:border-orange-500/30 hover:bg-orange-900/20'
+            }`}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center space-x-2 mb-2">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-r ${phase.color}`}>
                 {phase.icon}
               </div>
-              <span className={`text-sm font-medium text-center max-w-24 ${
-                activePhase === phase.id ? 'text-white' : 'text-slate-400'
-              }`}>
-                {phase.title.split(' ')[0]} {phase.title.split(' ')[1]}
-              </span>
-              <Progress 
-                value={getPhaseProgress(phase.id)} 
-                className="w-20 mt-2 h-1"
-              />
-            </motion.button>
-          ))}
-        </div>
+              {getStatusIcon(phase.status)}
+            </div>
+            <h3 className="font-semibold text-white mb-1 text-xs font-[family-name:var(--font-unbounded)]">
+              {phase.title}
+            </h3>
+            <p className="text-xs text-neutral-400 font-[family-name:var(--font-spline-sans-mono)]">
+              {phase.subtitle}
+            </p>
+          </motion.button>
+        ))}
       </div>
 
       {/* Active Phase Details */}
@@ -174,125 +184,75 @@ const FusionTimeline: React.FC = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.3 }}
             >
-              <Card className="mb-8 overflow-hidden">
-                <div className={`h-2 bg-gradient-to-r ${phase.color}`} />
+              <Card className="bg-black/80 border-neutral-800/50">
                 <CardHeader>
-                  <div className="flex items-center space-x-4">
-                    <div className={`w-12 h-12 rounded-full bg-gradient-to-r ${phase.color} flex items-center justify-center`}>
-                      {phase.icon}
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-r ${phase.color} text-black`}>
+                      <div className="w-6 h-6">
+                        {phase.icon}
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <CardTitle className="text-3xl mb-2">{phase.title}</CardTitle>
-                      <CardDescription className="text-lg text-cyan-400 font-medium">
+                    <div>
+                      <CardTitle className="text-xl md:text-2xl text-white font-[family-name:var(--font-unbounded)]">
+                        {phase.title}
+                      </CardTitle>
+                      <CardDescription className="text-orange-400 font-semibold text-sm font-[family-name:var(--font-spline-sans-mono)]">
                         {phase.subtitle}
                       </CardDescription>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {phase.status === 'completed' && <CheckCircle2 className="w-6 h-6 text-green-400" />}
-                      {phase.status === 'active' && <Zap className="w-6 h-6 text-yellow-400 animate-pulse" />}
-                      {phase.status === 'pending' && <Clock className="w-6 h-6 text-slate-400" />}
-                    </div>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-slate-300 text-lg mb-6 leading-relaxed">
+
+                <CardContent className="space-y-4">
+                  <p className="text-base text-neutral-300 leading-relaxed font-[family-name:var(--font-spline-sans-mono)]">
                     {phase.description}
                   </p>
-                  
-                  <div className="grid md:grid-cols-2 gap-6">
+
+                  <div className="grid md:grid-cols-2 gap-4">
                     <div>
-                      <h4 className="text-xl font-semibold text-white mb-4 flex items-center">
-                        <Shield className="w-5 h-5 mr-2 text-cyan-400" />
-                        Technical Details
+                      <h4 className="text-base font-semibold text-white mb-3 font-[family-name:var(--font-unbounded)]">
+                        Key Steps
                       </h4>
-                      <ul className="space-y-3">
-                        {phase.details.map((detail, index) => (
+                      <ul className="space-y-2">
+                        {phase.details.slice(0, 3).map((detail, index) => (
                           <motion.li
                             key={index}
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.1 }}
-                            className="flex items-start space-x-3 text-slate-300"
+                            className="flex items-start space-x-2"
                           >
-                            <ArrowRight className="w-4 h-4 mt-1 text-cyan-400 flex-shrink-0" />
-                            <span>{detail}</span>
+                            <div className="w-5 h-5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="text-xs font-bold text-black">{index + 1}</span>
+                            </div>
+                            <span className="text-neutral-300 text-xs leading-relaxed font-[family-name:var(--font-spline-sans-mono)]">
+                              {detail}
+                            </span>
                           </motion.li>
                         ))}
                       </ul>
                     </div>
-                    
-                    <div className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/30">
-                      <h4 className="text-xl font-semibold text-white mb-4 flex items-center">
-                        <Key className="w-5 h-5 mr-2 text-teal-400" />
-                        Key Features
+
+                    <div className="bg-neutral-900/50 rounded-xl p-4 border border-neutral-800/50">
+                      <h4 className="text-base font-semibold text-white mb-3 flex items-center font-[family-name:var(--font-unbounded)]">
+                        <Shield className="w-4 h-4 mr-2 text-orange-400" />
+                        Security
                       </h4>
-                      <div className="space-y-4">
-                        {phase.id === 'auction' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Auction Type</span>
-                              <span className="text-white font-medium">Dutch Auction</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Secret Method</span>
-                              <span className="text-white font-medium">Hash Commitment</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Price Discovery</span>
-                              <span className="text-white font-medium">Competitive Bidding</span>
-                            </div>
-                          </>
-                        )}
-                        {phase.id === 'deposit' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Contract Type</span>
-                              <span className="text-white font-medium">HTLC Escrow</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Chains Involved</span>
-                              <span className="text-white font-medium">Source + Destination</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Security</span>
-                              <span className="text-white font-medium">Safety Deposits</span>
-                            </div>
-                          </>
-                        )}
-                        {phase.id === 'withdrawal' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Trigger</span>
-                              <span className="text-white font-medium">Secret Reveal</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Atomicity</span>
-                              <span className="text-white font-medium">Guaranteed</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Trust Model</span>
-                              <span className="text-white font-medium">Trustless</span>
-                            </div>
-                          </>
-                        )}
-                        {phase.id === 'recovery' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Timeout T1</span>
-                              <span className="text-white font-medium">User Recovery</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Timeout T2</span>
-                              <span className="text-white font-medium">Resolver Recovery</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-slate-400">Fallback</span>
-                              <span className="text-white font-medium">Alternative Resolvers</span>
-                            </div>
-                          </>
-                        )}
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <CheckCircle2 className="w-3 h-3 text-orange-400" />
+                          <span className="text-xs text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Cryptographic verification</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <CheckCircle2 className="w-3 h-3 text-orange-400" />
+                          <span className="text-xs text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Time-locked protection</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <CheckCircle2 className="w-3 h-3 text-orange-400" />
+                          <span className="text-xs text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Atomic guarantees</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -303,43 +263,36 @@ const FusionTimeline: React.FC = () => {
         ))}
       </AnimatePresence>
 
-      {/* Security Guarantees */}
-      <Card className="bg-gradient-to-r from-green-900/20 via-emerald-900/20 to-teal-900/20 border-green-500/30">
-        <CardHeader>
-          <CardTitle className="flex items-center text-green-400">
-            <Shield className="w-6 h-6 mr-3" />
-            Security Guarantees
-          </CardTitle>
-          <CardDescription className="text-green-300/80">
-            Hash Time-Locked Contract (HTLC) ensures complete security and trustlessness
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-green-400" />
-              </div>
-              <h4 className="font-semibold text-white mb-2">Atomic Execution</h4>
-              <p className="text-green-200/80 text-sm">Either both parties get their desired assets or the swap fails completely - no partial states</p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users className="w-8 h-8 text-green-400" />
-              </div>
-              <h4 className="font-semibold text-white mb-2">Trustless</h4>
-              <p className="text-green-200/80 text-sm">No need to trust counterparties - smart contracts enforce the rules automatically</p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <RefreshCw className="w-8 h-8 text-green-400" />
-              </div>
-              <h4 className="font-semibold text-white mb-2">Self-Custodial</h4>
-              <p className="text-green-200/80 text-sm">Users maintain control of their assets throughout the entire process</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Navigation Controls */}
+      <div className="flex items-center justify-center space-x-3">
+        <button
+          onClick={() => {
+            const currentIndex = phases.findIndex(p => p.id === activePhase);
+            if (currentIndex > 0) {
+              handlePhaseClick(phases[currentIndex - 1].id);
+            }
+          }}
+          disabled={phases.findIndex(p => p.id === activePhase) === 0}
+          className="flex items-center space-x-2 px-4 py-2 bg-black/60 hover:bg-orange-900/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-orange-500/30 transition-all duration-300 text-sm font-[family-name:var(--font-unbounded)]"
+        >
+          <ArrowRight className="w-3 h-3 rotate-180" />
+          <span className="text-white">Previous</span>
+        </button>
+        
+        <button
+          onClick={() => {
+            const currentIndex = phases.findIndex(p => p.id === activePhase);
+            if (currentIndex < phases.length - 1) {
+              handlePhaseClick(phases[currentIndex + 1].id);
+            }
+          }}
+          disabled={phases.findIndex(p => p.id === activePhase) === phases.length - 1}
+          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-yellow-600 hover:from-orange-700 hover:to-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-all duration-300 text-sm font-[family-name:var(--font-unbounded)]"
+        >
+          <span className="text-white">Next</span>
+          <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
     </div>
   );
 };

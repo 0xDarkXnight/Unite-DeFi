@@ -12,20 +12,20 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         className={cn(
-          'inline-flex items-center justify-center rounded-xl text-sm font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]',
+          'inline-flex items-center justify-center rounded-2xl text-sm font-medium transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] font-[family-name:var(--font-unbounded)]',
           {
-            'bg-slate-800 text-slate-50 hover:bg-slate-800/80 shadow-lg': variant === 'default',
-            'bg-red-600 text-slate-50 hover:bg-red-700 shadow-lg': variant === 'destructive',
-            'border border-slate-700 bg-transparent hover:bg-slate-800/50 hover:text-slate-50': variant === 'outline',
-            'bg-slate-700 text-slate-50 hover:bg-slate-700/80': variant === 'secondary',
-            'hover:bg-slate-800/50 hover:text-slate-50': variant === 'ghost',
-            'text-cyan-400 underline-offset-4 hover:underline hover:text-cyan-300': variant === 'link',
-            'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-600 text-white hover:from-cyan-700 hover:via-teal-700 hover:to-cyan-700 shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 hover:scale-105': variant === 'gradient',
+            'bg-neutral-900/60 text-neutral-50 hover:bg-neutral-800/80 shadow-lg border border-neutral-700/50 backdrop-blur-sm': variant === 'default',
+            'bg-red-600 text-neutral-50 hover:bg-red-700 shadow-lg': variant === 'destructive',
+            'border border-neutral-600/50 bg-transparent hover:bg-neutral-800/30 hover:text-neutral-50 backdrop-blur-sm': variant === 'outline',
+            'bg-neutral-800/50 text-neutral-50 hover:bg-neutral-700/60 backdrop-blur-sm': variant === 'secondary',
+            'hover:bg-neutral-800/30 hover:text-neutral-50': variant === 'ghost',
+            'text-orange-400 underline-offset-4 hover:underline hover:text-orange-300': variant === 'link',
+            'bg-gradient-to-r from-orange-600 via-red-600 to-orange-500 text-white hover:from-orange-700 hover:via-red-700 hover:to-orange-600 shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 hover:scale-105': variant === 'gradient',
           },
           {
             'h-10 px-4 py-2': size === 'default',
-            'h-9 rounded-lg px-3': size === 'sm',
-            'h-11 rounded-xl px-8': size === 'lg',
+            'h-9 rounded-lg px-3 text-xs': size === 'sm',
+            'h-12 rounded-2xl px-8 text-base': size === 'lg',
             'h-10 w-10': size === 'icon',
           },
           className
