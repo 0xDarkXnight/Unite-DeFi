@@ -1,0 +1,90 @@
+# Binaries and build artifacts
+/bin/fusion-relayer
+/bin/fusion-migrate
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+*.prof
+coverage.html
+
+# Dependency directories
+/vendor/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment and configuration files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.fusion
+*.pem
+*.key
+scripts/
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+logs/
+log/
+
+# Temporary files
+/tmp/
+.tmp/
+*.tmp
+
+# Generated files
+/generated/
+
+# Sui Move build artifacts
+/sui-move/**/build/
+/sui-move/**/.coverage/
+/sui-move/**/.trace/
+
+# Anvil and blockchain artifacts
+/anvil.log
+/sui.log
+/chain-data/
+
+# Deployment artifacts
+/deploy/
+/releases/
+
+# Script outputs
+/scripts/output/
+
+# Credentials
+.git-credentials
+.netrc
+
+# Documentation drafts
+/docs/drafts/
+
+# Test data
+/testdata/
+
+# Crash logs
+crash.log
+
+# System Files
+.directory
+Thumbs.db
+
