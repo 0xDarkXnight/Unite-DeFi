@@ -98,17 +98,6 @@ const UniteDefiLanding = () => {
               ))}
             </div>
             </div>
-            
-          {/* Left positioned text - Bottom position (where cards were) */}
-          {/* 
-          <div className="absolute bottom-20 left-0 max-w-2xl">
-            <h1 className="text-6xl md:text-8xl font-black leading-tight font-[family-name:var(--font-unbounded)]">
-              <div className="bg-gradient-to-r from-white via-neutral-100 to-white bg-clip-text text-transparent">
-                Unite Every Chain
-              </div>
-            </h1>
-          </div>
-          */}
           
           {/* UNCOMMENT AND ADJUST THE SECTION BELOW */}
           <div className="absolute bottom-16 left-8 max-w-2xl mt-6">
