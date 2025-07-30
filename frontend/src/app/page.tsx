@@ -111,12 +111,17 @@ const UniteDefiLanding = () => {
           */}
           
           {/* UNCOMMENT AND ADJUST THE SECTION BELOW */}
-          <div className="absolute bottom-12 left-0 max-w-2xl mt-8">
+          <div className="absolute bottom-16 left-8 max-w-2xl mt-6">
             <h1 className="text-5xl md:text-7xl font-black leading-tight font-[family-name:var(--font-unbounded)]">
-              <div className="bg-gradient-to-r from-white via-neutral-100 to-white bg-clip-text text-transparent">
-                Unite Every Chain
-              </div>
+              <span className="bg-gradient-to-r from-white via-neutral-100 to-white bg-clip-text text-transparent">Unite </span>
+              <span className="bg-gradient-to-r from-orange-400 via-red-400 to-orange-400 bg-clip-text text-transparent animate-pulse transition-all duration-500 hover:brightness-125 cursor-pointer" style={{display: 'inline-block'}}>
+                Every
+              </span>
+              <span className="bg-gradient-to-r from-white via-neutral-100 to-white bg-clip-text text-transparent"> Chain</span>
             </h1>
+            <p className="text-lg text-neutral-300 mt-4 font-[family-name:var(--font-spline-sans-mono)] max-w-xl">
+              The protocol that brings all blockchains together. Effortless, secure, and truly cross-chain swaps for everyone.
+            </p>
           </div>
           {/* 
           ADJUSTMENT GUIDE:
@@ -130,7 +135,7 @@ const UniteDefiLanding = () => {
           */}
         </div>
 
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-bounce cursor-pointer group">
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 animate-bounce cursor-pointer group">
           <div className="p-3 bg-neutral-900/30 backdrop-blur-sm border border-neutral-800/50 rounded-full group-hover:bg-neutral-900/50 transition-all duration-300">
             <ChevronDown className="w-6 h-6 text-orange-400 group-hover:text-orange-300" />
           </div>
