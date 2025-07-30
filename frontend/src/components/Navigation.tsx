@@ -2,15 +2,11 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, Menu, X, Wallet, ExternalLink, ArrowUpDown } from 'lucide-react';
+import { Zap, Menu, X, ExternalLink, ArrowUpDown } from 'lucide-react';
 import { Button } from './ui/Button';
+import { CustomConnectButton, MobileCustomConnectButton } from './CustomConnectButton';
 
-interface NavigationProps {
-  isConnected?: boolean;
-  onConnectWallet?: () => void;
-}
-
-const Navigation: React.FC<NavigationProps> = ({ isConnected = false, onConnectWallet }) => {
+const Navigation: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
 
@@ -58,16 +54,7 @@ const Navigation: React.FC<NavigationProps> = ({ isConnected = false, onConnectW
 
         {/* Desktop Actions */}
         <div className="hidden md:flex items-center space-x-6">
-          
-          
-          <Button
-            variant={isConnected ? 'secondary' : 'gradient'}
-            onClick={onConnectWallet}
-            className="flex items-center space-x-2"
-          >
-            <Wallet className="w-4 h-4" />
-            <span>{isConnected ? 'Connected' : 'Connect Wallet'}</span>
-          </Button>
+          <CustomConnectButton />
         </div>
 
         {/* Mobile Menu Button */}
@@ -105,14 +92,7 @@ const Navigation: React.FC<NavigationProps> = ({ isConnected = false, onConnectW
                 Documentation
               </Button>
               
-              <Button
-                variant={isConnected ? 'secondary' : 'gradient'}
-                onClick={onConnectWallet}
-                className="w-full flex items-center justify-center space-x-2"
-              >
-                <Wallet className="w-4 h-4" />
-                <span>{isConnected ? 'Connected' : 'Connect Wallet'}</span>
-              </Button>
+              <MobileCustomConnectButton />
             </div>
           </div>
         </div>

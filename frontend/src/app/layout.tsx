@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Unbounded, Spline_Sans_Mono } from "next/font/google";
 import "./globals.css";
+import '@rainbow-me/rainbowkit/styles.css';
+import { Providers } from '../components/Providers';
 
 const unbounded = Unbounded({
   variable: "--font-unbounded",
@@ -80,7 +82,9 @@ export default function RootLayout({
       <body
         className={`${unbounded.variable} ${splineSansMono.variable} antialiased`}
       >
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

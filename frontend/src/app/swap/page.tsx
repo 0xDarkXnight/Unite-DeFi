@@ -1,6 +1,7 @@
 'use client'
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAccount, useBalance, useChainId } from 'wagmi';
 import Navigation from '@/components/Navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -25,7 +26,8 @@ import {
   Target,
   DollarSign,
   Activity,
-  CheckCircle
+  CheckCircle,
+  Check
 } from 'lucide-react';
 
 interface SwapState {
@@ -59,7 +61,275 @@ interface ChainData {
   status: 'fast' | 'normal' | 'slow';
 }
 
+// Token Icon Components
+const TokenIcon = ({ symbol, size = 24 }: { symbol: string; size?: number }) => {
+  const getTokenIcon = () => {
+    switch (symbol) {
+      case 'ETH':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#627EEA"/>
+            <path d="M16.498 4v8.87l7.497 3.35L16.498 4z" fill="#FFFFFF" fillOpacity="0.602"/>
+            <path d="M16.498 4L9 16.22l7.498-3.35V4z" fill="#FFFFFF"/>
+            <path d="M16.498 21.968v6.027L24 17.616l-7.502 4.352z" fill="#FFFFFF" fillOpacity="0.602"/>
+            <path d="M16.498 27.995v-6.028L9 17.616l7.498 10.38z" fill="#FFFFFF"/>
+            <path d="M16.498 20.573l7.497-4.353-7.497-3.348v7.701z" fill="#FFFFFF" fillOpacity="0.2"/>
+            <path d="M9 16.22l7.498 4.353v-7.701L9 16.22z" fill="#FFFFFF" fillOpacity="0.602"/>
+          </svg>
+        );
+      case 'USDC':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#2775CA"/>
+            <path d="M15.75 27.5C9.26 27.5 4 22.24 4 15.75S9.26 4 15.75 4 27.5 9.26 27.5 15.75 22.24 27.5 15.75 27.5z" fill="#2775CA"/>
+            <path d="M10.11 17.22c0-3.13 1.89-4.82 5.18-4.82 1.68 0 2.88.32 4.09 1.05l-.83 2.16c-.96-.58-1.89-.83-3.21-.83-1.63 0-2.42.71-2.42 2.34v.48c0 1.58.79 2.29 2.42 2.29 1.32 0 2.25-.25 3.21-.83l.83 2.16c-1.21.73-2.41 1.05-4.09 1.05-3.29 0-5.18-1.69-5.18-4.82v-.48z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'BTC':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#F7931A"/>
+            <path d="M23.189 14.02c.314-2.096-1.283-3.223-3.465-3.975l.708-2.84-1.728-.43-.69 2.765c-.454-.113-.92-.22-1.385-.326l.695-2.783L15.596 6l-.708 2.839c-.376-.086-.746-.17-1.104-.26l.002-.009-2.384-.595-.46 1.846s1.283.294 1.256.312c.7.175.826.638.805 1.006l-.806 3.235c.048.012.11.03.18.057l-.181-.045-1.13 4.532c-.086.212-.303.531-.793.41.018.025-1.256-.313-1.256-.313l-.858 1.978 2.25.561c.418.105.828.215 1.231.318l-.715 2.872 1.727.43.708-2.84c.472.127.93.245 1.378.357l-.706 2.828 1.728.43.715-2.866c2.948.558 5.164.333 6.097-2.333.752-2.146-.037-3.385-1.588-4.192 1.13-.26 1.98-1.003 2.207-2.538zm-3.95 5.538c-.533 2.147-4.148.986-5.32.695l.95-3.805c1.172.293 4.929.872 4.37 3.11zm.535-5.569c-.487 1.953-3.495.96-4.47.717l.86-3.45c.975.243 4.118.696 3.61 2.733z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'MATIC':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#8247E5"/>
+            <path d="M21.092 12.693c-.369-.215-.821-.215-1.19 0l-3.377 1.95-2.287 1.316-3.377 1.95c-.369.215-.821.215-1.19 0l-2.698-1.565c-.369-.215-.595-.611-.595-1.04V12.97c0-.429.226-.825.595-1.04l2.698-1.565c.369-.215.821-.215 1.19 0l2.698 1.565c.369.215.595.611.595 1.04v1.95l2.287-1.316v-1.95c0-.429-.226-.825-.595-1.04L12.238 8.069c-.369-.215-.821-.215-1.19 0l-5.857 3.386c-.369.215-.595.611-.595 1.04v6.772c0 .429.226.825.595 1.04l5.857 3.386c.369.215.821.215 1.19 0l3.377-1.95 2.287-1.316 3.377-1.95c.369-.215.821-.215 1.19 0l2.698 1.565c.369.215.595.611.595 1.04v3.234c0 .429-.226.825-.595 1.04l-2.698 1.565c-.369.215-.821.215-1.19 0l-2.698-1.565c-.369-.215-.595-.611-.595-1.04v-1.95l-2.287 1.316v1.95c0 .429.226.825.595 1.04l5.857 3.386c.369.215.821.215 1.19 0l5.857-3.386c.369-.215.595-.611.595-1.04v-6.772c0-.429-.226-.825-.595-1.04l-5.857-3.386z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'SOL':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="url(#solana-gradient)"/>
+            <defs>
+              <linearGradient id="solana-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#00FFA3"/>
+                <stop offset="100%" stopColor="#DC1FFF"/>
+              </linearGradient>
+            </defs>
+            <path d="M7.5 19.8c.2-.2.5-.3.8-.3h15.4c.6 0 .9.7.5 1.1l-3.2 3.2c-.2.2-.5.3-.8.3H4.8c-.6 0-.9-.7-.5-1.1l3.2-3.2zM7.5 8.7c.2-.2.5-.3.8-.3h15.4c.6 0 .9.7.5 1.1l-3.2 3.2c-.2.2-.5.3-.8.3H4.8c-.6 0-.9-.7-.5-1.1l3.2-3.2zM24.5 13.8c-.2-.2-.5-.3-.8-.3H8.3c-.6 0-.9.7-.5 1.1l3.2 3.2c.2.2.5.3.8.3h15.4c.6 0 .9-.7.5-1.1l-3.2-3.2z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'SUI':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#4DA2FF"/>
+            <path d="M16.5 6.5c-3.3 0-6 2.7-6 6v7c0 3.3 2.7 6 6 6s6-2.7 6-6v-7c0-3.3-2.7-6-6-6zm3 13c0 1.7-1.3 3-3 3s-3-1.3-3-3v-7c0-1.7 1.3-3 3-3s3 1.3 3 3v7z" fill="#FFFFFF"/>
+            <circle cx="16.5" cy="14" r="2" fill="#4DA2FF"/>
+          </svg>
+        );
+      case 'APT':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#000000"/>
+            <path d="M16 4L8 12h4v12h8V12h4L16 4z" fill="#FFFFFF"/>
+            <circle cx="16" cy="16" r="2" fill="#00D4AA"/>
+          </svg>
+        );
+      default:
+        return (
+          <div 
+            className="rounded-full flex items-center justify-center text-white font-bold bg-neutral-600"
+            style={{ width: size, height: size, fontSize: size * 0.4 }}
+          >
+            {symbol.charAt(0)}
+          </div>
+        );
+    }
+  };
+
+  return getTokenIcon();
+};
+
+// Chain Icon Component
+const ChainIcon = ({ name, size = 20 }: { name: string; size?: number }) => {
+  const getChainIcon = () => {
+    switch (name) {
+      case 'Ethereum':
+        return <TokenIcon symbol="ETH" size={size} />;
+      case 'Polygon':
+        return <TokenIcon symbol="MATIC" size={size} />;
+      case 'Solana':
+        return <TokenIcon symbol="SOL" size={size} />;
+      case 'Sui':
+        return <TokenIcon symbol="SUI" size={size} />;
+      case 'Aptos':
+        return <TokenIcon symbol="APT" size={size} />;
+      case 'Arbitrum':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#28A0F0"/>
+            <path d="M16 6L8 20h4l4-8 4 8h4L16 6z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'Optimism':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#FF0420"/>
+            <path d="M12 10c-2.2 0-4 1.8-4 4s1.8 4 4 4h1c1.1 0 2-.9 2-2s-.9-2-2-2h-1c-.6 0-1-.4-1-1s.4-1 1-1h8c.6 0 1 .4 1 1s-.4 1-1 1h-1c-1.1 0-2 .9-2 2s.9 2 2 2h1c2.2 0 4-1.8 4-4s-1.8-4-4-4H12z" fill="#FFFFFF"/>
+          </svg>
+        );
+      case 'BNB Chain':
+        return (
+          <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="16" fill="#F3BA2F"/>
+            <path d="M12 10L16 6l4 4 4-4-8-2-8 2 4 4zm8 6l4-4v8l-4 4v-8zm-8 6l4 4 4-4 4 4-8 2-8-2 4-4zm-4-6v-8l4 4v8l-4-4z" fill="#FFFFFF"/>
+          </svg>
+        );
+      default:
+        return (
+          <div 
+            className="rounded-full flex items-center justify-center text-white font-bold bg-neutral-600"
+            style={{ width: size, height: size, fontSize: size * 0.4 }}
+          >
+            {name.charAt(0)}
+          </div>
+        );
+    }
+  };
+
+  return getChainIcon();
+};
+
+// Custom Dropdown Component
+const CustomDropdown = ({ 
+  value, 
+  onChange, 
+  options, 
+  type = 'token',
+  className = '' 
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: any[];
+  type?: 'token' | 'chain';
+  className?: string;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  const selectedOption = options.find(option => 
+    type === 'token' ? option.symbol === value : option.name === value
+  );
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className={`relative ${className}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full px-3 py-2 bg-neutral-800/50 border border-neutral-700/50 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all duration-300 hover:bg-neutral-700/50 hover:border-neutral-600/50 flex items-center justify-between text-left ${
+          isOpen ? 'ring-1 ring-orange-500 bg-neutral-700/50' : ''
+        }`}
+      >
+        <div className="flex items-center space-x-2">
+          {type === 'token' ? (
+            <TokenIcon symbol={selectedOption?.symbol || value} size={18} />
+          ) : (
+            <ChainIcon name={selectedOption?.name || value} size={18} />
+          )}
+          <span className="text-white font-medium text-sm font-[family-name:var(--font-unbounded)]">
+            {type === 'token' ? selectedOption?.symbol : selectedOption?.name}
+          </span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-orange-400' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="absolute top-full left-0 right-0 mt-1 bg-neutral-900/95 backdrop-blur-xl border border-neutral-700/50 rounded-lg shadow-2xl z-50 max-h-60 overflow-y-auto"
+            style={{
+              boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04), 0 0 0 1px rgb(234 88 12 / 0.1)'
+            }}
+          >
+            {options.map((option, index) => {
+              const optionValue = type === 'token' ? option.symbol : option.name;
+              const isSelected = optionValue === value;
+              
+              return (
+                <motion.button
+                  key={optionValue}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.03 }}
+                  onClick={() => {
+                    onChange(optionValue);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full px-3 py-3 flex items-center space-x-3 hover:bg-neutral-800/60 transition-all duration-200 group ${
+                    index === 0 ? 'rounded-t-lg' : ''
+                  } ${
+                    index === options.length - 1 ? 'rounded-b-lg' : ''
+                  } ${
+                    isSelected ? 'bg-orange-600/20 border-l-2 border-orange-500' : ''
+                  }`}
+                >
+                  <div className="flex-shrink-0">
+                    {type === 'token' ? (
+                      <TokenIcon symbol={option.symbol} size={20} />
+                    ) : (
+                      <ChainIcon name={option.name} size={20} />
+                    )}
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className={`text-white font-medium text-sm font-[family-name:var(--font-unbounded)] transition-colors duration-200 ${
+                      isSelected ? 'text-orange-100' : 'group-hover:text-white'
+                    }`}>
+                      {type === 'token' ? option.symbol : option.name}
+                    </div>
+                    {type === 'token' && (
+                      <div className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)] truncate group-hover:text-neutral-300 transition-colors duration-200">
+                        {option.name}
+                      </div>
+                    )}
+                    {type === 'chain' && (
+                      <div className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)] group-hover:text-neutral-300 transition-colors duration-200">
+                        {option.gasPrice}
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    >
+                      <Check className="w-4 h-4 text-orange-400 flex-shrink-0" />
+                    </motion.div>
+                  )}
+                </motion.button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const SwapPage = () => {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  
   const [swapState, setSwapState] = useState<SwapState>({
     fromToken: 'ETH',
     toToken: 'USDC',
@@ -72,7 +342,6 @@ const SwapPage = () => {
     limitPrice: ''
   });
 
-  const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [estimatedOutput, setEstimatedOutput] = useState('');
@@ -80,24 +349,24 @@ const SwapPage = () => {
   const [routeInfo, setRouteInfo] = useState<any>(null);
 
   const tokens: TokenData[] = [
-    { symbol: 'ETH', name: 'Ethereum', logo: '🔷', balance: '2.5847', price: 3240.50, change24h: 2.3, volume24h: '$12.5B' },
-    { symbol: 'USDC', name: 'USD Coin', logo: '💵', balance: '1,250.50', price: 1.00, change24h: 0.01, volume24h: '$8.2B' },
-    { symbol: 'BTC', name: 'Bitcoin', logo: '₿', balance: '0.1563', price: 67500.00, change24h: -0.8, volume24h: '$15.8B' },
-    { symbol: 'MATIC', name: 'Polygon', logo: '🟣', balance: '850.25', price: 0.85, change24h: 3.2, volume24h: '$450M' },
-    { symbol: 'SOL', name: 'Solana', logo: '☀️', balance: '12.8', price: 180.25, change24h: -1.2, volume24h: '$2.1B' },
-    { symbol: 'SUI', name: 'Sui', logo: '💧', balance: '125.0', price: 3.15, change24h: 5.7, volume24h: '$180M' },
-    { symbol: 'APT', name: 'Aptos', logo: '🍃', balance: '45.2', price: 12.45, change24h: 2.8, volume24h: '$95M' },
+    { symbol: 'ETH', name: 'Ethereum', logo: 'ETH', balance: '2.5847', price: 3240.50, change24h: 2.3, volume24h: '$12.5B' },
+    { symbol: 'USDC', name: 'USD Coin', logo: 'USDC', balance: '1,250.50', price: 1.00, change24h: 0.01, volume24h: '$8.2B' },
+    { symbol: 'BTC', name: 'Bitcoin', logo: 'BTC', balance: '0.1563', price: 67500.00, change24h: -0.8, volume24h: '$15.8B' },
+    { symbol: 'MATIC', name: 'Polygon', logo: 'MATIC', balance: '850.25', price: 0.85, change24h: 3.2, volume24h: '$450M' },
+    { symbol: 'SOL', name: 'Solana', logo: 'SOL', balance: '12.8', price: 180.25, change24h: -1.2, volume24h: '$2.1B' },
+    { symbol: 'SUI', name: 'Sui', logo: 'SUI', balance: '125.0', price: 3.15, change24h: 5.7, volume24h: '$180M' },
+    { symbol: 'APT', name: 'Aptos', logo: 'APT', balance: '45.2', price: 12.45, change24h: 2.8, volume24h: '$95M' },
   ];
 
   const chains: ChainData[] = [
-    { name: 'Ethereum', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: '🔷', gasPrice: '25 gwei', status: 'normal' },
-    { name: 'Polygon', symbol: 'MATIC', color: 'from-neutral-600 to-neutral-800', logo: '🟣', gasPrice: '35 gwei', status: 'fast' },
-    { name: 'Arbitrum', symbol: 'ARB', color: 'from-neutral-600 to-neutral-800', logo: '🔵', gasPrice: '0.5 gwei', status: 'fast' },
-    { name: 'Optimism', symbol: 'OP', color: 'from-neutral-600 to-neutral-800', logo: '🔴', gasPrice: '0.3 gwei', status: 'fast' },
-    { name: 'BNB Chain', symbol: 'BNB', color: 'from-neutral-600 to-neutral-800', logo: '🟡', gasPrice: '3 gwei', status: 'normal' },
-    { name: 'Sui', symbol: 'SUI', color: 'from-neutral-600 to-neutral-800', logo: '💧', gasPrice: '0.001 SUI', status: 'fast' },
-    { name: 'Aptos', symbol: 'APT', color: 'from-neutral-600 to-neutral-800', logo: '🍃', gasPrice: '0.001 APT', status: 'fast' },
-    { name: 'Solana', symbol: 'SOL', color: 'from-neutral-600 to-neutral-800', logo: '☀️', gasPrice: '0.00025 SOL', status: 'fast' },
+    { name: 'Ethereum', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '25 gwei', status: 'normal' },
+    { name: 'Polygon', symbol: 'MATIC', color: 'from-neutral-600 to-neutral-800', logo: 'MATIC', gasPrice: '35 gwei', status: 'fast' },
+    { name: 'Arbitrum', symbol: 'ARB', color: 'from-neutral-600 to-neutral-800', logo: 'ARB', gasPrice: '0.5 gwei', status: 'fast' },
+    { name: 'Optimism', symbol: 'OP', color: 'from-neutral-600 to-neutral-800', logo: 'OP', gasPrice: '0.3 gwei', status: 'fast' },
+    { name: 'BNB Chain', symbol: 'BNB', color: 'from-neutral-600 to-neutral-800', logo: 'BNB', gasPrice: '3 gwei', status: 'normal' },
+    { name: 'Sui', symbol: 'SUI', color: 'from-neutral-600 to-neutral-800', logo: 'SUI', gasPrice: '0.001 SUI', status: 'fast' },
+    { name: 'Aptos', symbol: 'APT', color: 'from-neutral-600 to-neutral-800', logo: 'APT', gasPrice: '0.001 APT', status: 'fast' },
+    { name: 'Solana', symbol: 'SOL', color: 'from-neutral-600 to-neutral-800', logo: 'SOL', gasPrice: '0.00025 SOL', status: 'fast' },
   ];
 
   const recentTransactions = [
@@ -158,20 +427,17 @@ const SwapPage = () => {
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
       </div>
 
-      <Navigation isConnected={isConnected} onConnectWallet={() => setIsConnected(!isConnected)} />
+      <Navigation />
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Main Swap Interface */}
-          <div className="flex-1 max-w-2xl">
+        {/* Centered Main Swap Interface */}
+        <div className="flex justify-center">
+          <div className="w-full max-w-2xl">
             {/* Header */}
             <div className="mb-6">
               <h1 className="text-3xl font-black gradient-text mb-2 font-[family-name:var(--font-unbounded)]">
                 Cross-Chain Swap
               </h1>
-              <p className="text-neutral-400 text-sm font-[family-name:var(--font-spline-sans-mono)]">
-                Trade across 15+ blockchains with zero compromises
-              </p>
             </div>
 
             {/* Order Type Selector */}
@@ -280,9 +546,6 @@ const SwapPage = () => {
                   <div className="bg-neutral-900/60 rounded-xl p-4 border border-neutral-800/50 hover:border-neutral-700/50 transition-all duration-300">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-neutral-400 text-xs font-medium font-[family-name:var(--font-spline-sans-mono)]">From</span>
-                      <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">
-                        Balance: {fromTokenData?.balance || '0.00'}
-                      </span>
                     </div>
                     
                     <div className="flex items-center space-x-3">
@@ -294,42 +557,21 @@ const SwapPage = () => {
                           placeholder="0.0"
                           className="w-full text-2xl font-bold bg-transparent border-none outline-none text-white placeholder-neutral-500 font-[family-name:var(--font-spline-sans-mono)]"
                         />
-                        <div className="text-neutral-400 text-xs mt-1 font-[family-name:var(--font-spline-sans-mono)]">
-                          ≈ ${swapState.fromAmount && fromTokenData ? (parseFloat(swapState.fromAmount) * fromTokenData.price).toLocaleString() : '0.00'}
-                        </div>
                       </div>
                       
                       <div className="flex flex-col space-y-2">
-                        <select
+                        <CustomDropdown
                           value={swapState.fromChain}
-                          onChange={(e) => setSwapState(prev => ({ ...prev, fromChain: e.target.value }))}
-                          className="px-3 py-2 bg-neutral-800/50 border border-neutral-700/50 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 font-[family-name:var(--font-spline-sans-mono)]"
-                        >
-                          {chains.map(chain => (
-                            <option key={chain.name} value={chain.name}>{chain.name}</option>
-                          ))}
-                        </select>
-                        <select
+                          onChange={(value) => setSwapState(prev => ({ ...prev, fromChain: value }))}
+                          options={chains}
+                          type="chain"
+                        />
+                        <CustomDropdown
                           value={swapState.fromToken}
-                          onChange={(e) => setSwapState(prev => ({ ...prev, fromToken: e.target.value }))}
-                          className="px-3 py-2 bg-neutral-800/50 border border-neutral-700/50 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-orange-500 font-[family-name:var(--font-unbounded)]"
-                        >
-                          {tokens.map(token => (
-                            <option key={token.symbol} value={token.symbol}>
-                              {token.logo} {token.symbol}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-white font-semibold text-sm font-[family-name:var(--font-spline-sans-mono)]">
-                          ${fromTokenData?.price.toLocaleString() || '0.00'}
-                        </div>
-                        <div className={`text-xs font-[family-name:var(--font-spline-sans-mono)] ${
-                          (fromTokenData?.change24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'
-                        }`}>
-                          {(fromTokenData?.change24h || 0) >= 0 ? '+' : ''}{fromTokenData?.change24h || 0}%
-                        </div>
+                          onChange={(value) => setSwapState(prev => ({ ...prev, fromToken: value }))}
+                          options={tokens}
+                          type="token"
+                        />
                       </div>
                     </div>
                   </div>
@@ -348,9 +590,6 @@ const SwapPage = () => {
                   <div className="bg-neutral-900/60 rounded-xl p-4 border border-neutral-800/50 hover:border-neutral-700/50 transition-all duration-300">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-neutral-400 text-xs font-medium font-[family-name:var(--font-spline-sans-mono)]">To</span>
-                      <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">
-                        Balance: {toTokenData?.balance || '0.00'}
-                      </span>
                     </div>
                     
                     <div className="flex items-center space-x-3">
@@ -358,43 +597,22 @@ const SwapPage = () => {
                         <div className="text-2xl font-bold text-white font-[family-name:var(--font-spline-sans-mono)]">
                           {estimatedOutput || '0.0'}
                         </div>
-                        <div className="text-neutral-400 text-xs mt-1 font-[family-name:var(--font-spline-sans-mono)]">
-                          ≈ ${estimatedOutput && toTokenData ? (parseFloat(estimatedOutput) * toTokenData.price).toLocaleString() : '0.00'}
-                        </div>
                       </div>
                       
                       <div className="flex flex-col space-y-2">
-                        <select
+                        <CustomDropdown
                           value={swapState.toChain}
-                          onChange={(e) => setSwapState(prev => ({ ...prev, toChain: e.target.value }))}
-                          className="px-3 py-2 bg-neutral-800/50 border border-neutral-700/50 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 font-[family-name:var(--font-spline-sans-mono)]"
-                        >
-                          {chains.map(chain => (
-                            <option key={chain.name} value={chain.name}>{chain.name}</option>
-                          ))}
-                        </select>
+                          onChange={(value) => setSwapState(prev => ({ ...prev, toChain: value }))}
+                          options={chains}
+                          type="chain"
+                        />
                         
-                        <select
+                        <CustomDropdown
                           value={swapState.toToken}
-                          onChange={(e) => setSwapState(prev => ({ ...prev, toToken: e.target.value }))}
-                          className="px-3 py-2 bg-neutral-800/50 border border-neutral-700/50 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-orange-500 font-[family-name:var(--font-unbounded)]"
-                        >
-                          {tokens.map(token => (
-                            <option key={token.symbol} value={token.symbol}>
-                              {token.logo} {token.symbol}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-white font-semibold text-sm font-[family-name:var(--font-spline-sans-mono)]">
-                          ${toTokenData?.price.toLocaleString() || '0.00'}
-                        </div>
-                        <div className={`text-xs font-[family-name:var(--font-spline-sans-mono)] ${
-                          (toTokenData?.change24h || 0) >= 0 ? 'text-green-400' : 'text-red-400'
-                        }`}>
-                          {(toTokenData?.change24h || 0) >= 0 ? '+' : ''}{toTokenData?.change24h || 0}%
-                        </div>
+                          onChange={(value) => setSwapState(prev => ({ ...prev, toToken: value }))}
+                          options={tokens}
+                          type="token"
+                        />
                       </div>
                     </div>
                   </div>
@@ -472,151 +690,6 @@ const SwapPage = () => {
                     )}
                   </Button>
                 </CardContent>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Side Panel */}
-          <div className="lg:w-80 space-y-4">
-            {/* Market Stats */}
-            <Card className="bg-black/60 border-neutral-800/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center space-x-2 text-base">
-                  <TrendingUp className="w-4 h-4 text-orange-400" />
-                  <span>Market Overview</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">24h Volume</span>
-                    <span className="text-white font-semibold text-xs font-[family-name:var(--font-spline-sans-mono)]">$125.2M</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">Total Swaps</span>
-                    <span className="text-white font-semibold text-xs font-[family-name:var(--font-spline-sans-mono)]">2.5M+</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">Avg. Gas Saved</span>
-                    <span className="text-orange-400 font-semibold text-xs font-[family-name:var(--font-spline-sans-mono)]">45%</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">Active Chains</span>
-                    <span className="text-orange-400 font-semibold text-xs font-[family-name:var(--font-spline-sans-mono)]">15</span>
-                  </div>
-                  
-                  <div className="pt-3 border-t border-neutral-800/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-neutral-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">Price Impact</span>
-                      <span className="text-orange-400 text-xs font-[family-name:var(--font-spline-sans-mono)]">{priceImpact}%</span>
-                    </div>
-                    <Progress value={parseFloat(priceImpact) * 10} className="h-1" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Activity */}
-            <Card className="bg-black/60 border-neutral-800/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center space-x-2 text-base">
-                  <History className="w-4 h-4 text-orange-400" />
-                  <span>Recent Activity</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {recentTransactions.map((tx, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="flex items-center justify-between p-2 bg-neutral-900/30 rounded-lg hover:bg-neutral-900/50 transition-colors duration-300 cursor-pointer"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                          tx.type === 'swap' ? 'bg-orange-500/20' : 'bg-orange-500/20'
-                        }`}>
-                          {tx.type === 'swap' ? (
-                            <ArrowUpDown className="w-3 h-3 text-orange-400" />
-                          ) : (
-                            <Layers className="w-3 h-3 text-orange-400" />
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-xs font-medium text-white font-[family-name:var(--font-spline-sans-mono)]">
-                            {tx.type === 'bridge' ? `${tx.amount} ${tx.from}` : `${tx.from} → ${tx.to}`}
-                          </div>
-                          <div className="text-xs text-neutral-400 font-[family-name:var(--font-spline-sans-mono)]">{tx.time}</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-medium text-white font-[family-name:var(--font-spline-sans-mono)]">{tx.value}</div>
-                        <div className="flex items-center space-x-1">
-                          <CheckCircle className="w-2 h-2 text-orange-400" />
-                          <span className="text-xs text-orange-400 font-[family-name:var(--font-spline-sans-mono)]">Complete</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-                
-                <Button variant="ghost" className="w-full mt-3 text-xs font-[family-name:var(--font-unbounded)]">
-                  View All Transactions
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Network Status */}
-            <Card className="bg-black/60 border-neutral-800/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center space-x-2 text-base">
-                  <Activity className="w-4 h-4 text-orange-400" />
-                  <span>Network Status</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {chains.slice(0, 6).map((network, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          network.status === 'fast' ? 'bg-orange-400' : 
-                          network.status === 'normal' ? 'bg-yellow-400' : 'bg-red-400'
-                        }`}></div>
-                        <span className="text-xs text-white font-[family-name:var(--font-spline-sans-mono)]">{network.name}</span>
-                      </div>
-                      <span className="text-xs text-neutral-400 font-[family-name:var(--font-spline-sans-mono)]">{network.gasPrice}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Security Badge */}
-            <Card className="bg-neutral-900/40 border-neutral-800/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center text-orange-400 text-base">
-                  <Shield className="w-4 h-4 mr-2" />
-                  <span>Security Verified</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-3 h-3 text-orange-400" />
-                    <span className="text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Multi-signature verified</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-3 h-3 text-orange-400" />
-                    <span className="text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Audited by leading firms</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-3 h-3 text-orange-400" />
-                    <span className="text-neutral-300 font-[family-name:var(--font-spline-sans-mono)]">Non-custodial protocol</span>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
