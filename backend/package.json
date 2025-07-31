@@ -1,0 +1,41 @@
+{
+  "name": "cross-chain-dutch-auction-backend",
+  "version": "1.0.0",
+  "description": "Backend system for cross-chain Dutch auction with resolvers and relayer service",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "ethers": "^6.8.0",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "express-rate-limit": "^6.10.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "dotenv": "^16.3.1",
+    "redis": "^4.6.8",
+    "mongoose": "^7.5.0",
+    "winston": "^3.10.0",
+    "jsonwebtoken": "^9.0.2",
+    "big.js": "^6.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "author": "Cross-Chain Dutch Auction Team",
+  "license": "MIT",
+  "keywords": [
+    "cross-chain",
+    "dutch-auction",
+    "defi",
+    "ethereum",
+    "blockchain",
+    "atomic-swap"
+  ]
+}
