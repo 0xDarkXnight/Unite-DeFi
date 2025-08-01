@@ -350,7 +350,7 @@ const InteractiveDemo: React.FC = () => {
                     Ready to Demonstrate
                   </h3>
                   <p className="text-neutral-400 mb-6 font-[family-name:var(--font-spline-sans-mono)]">
-                    Click "Start Demo" to watch how a cross-chain swap works
+                    Click &quot;Start Demo&quot; to watch how a cross-chain swap works
                   </p>
                 </motion.div>
               )}

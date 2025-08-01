@@ -41,3 +41,40 @@ coverage/
 
 # Keys
 *.pem
+
+# Hardhat/Solidity
+cache/
+artifacts/
+typechain/
+typechain-types/
+deployments/
+/artifacts
+/cache
+/coverage
+coverage.json
+*.log
+
+# Backend specific
+*.pid
+logs/
+tmp/
+.temp/
+backend/logs/
+backend/cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environment
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Gradual commit scripts (local utility)
+gradual_commit.sh
+start_gradual_commit.sh
+gradual_commit.log
+gradual_commit.pid

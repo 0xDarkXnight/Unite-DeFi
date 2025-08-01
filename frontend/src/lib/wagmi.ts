@@ -1,7 +1,6 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import {
   arbitrum,
-  base,
   mainnet,
   optimism,
   polygon,
@@ -10,14 +9,13 @@ import {
 
 export const config = getDefaultConfig({
   appName: 'Unite DeFi',
-  projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'YOUR_PROJECT_ID', // Get this from WalletConnect Cloud
+  projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || 'demo-project-id',
   chains: [
-    mainnet,
-    polygon,
-    optimism,
-    arbitrum,
-    base,
-    ...(process.env.NODE_ENV === 'development' ? [sepolia] : []),
+    mainnet,     // 1
+    polygon,     // 137
+    optimism,    // 10
+    arbitrum,    // 42161
+    ...(process.env.NODE_ENV === 'development' ? [sepolia] : []), // 11155111
   ],
-  ssr: true, // If your dApp uses server side rendering (SSR)
+  ssr: true,
 }); 

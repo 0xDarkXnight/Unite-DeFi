@@ -1,33 +1,19 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAccount, useBalance, useChainId } from 'wagmi';
+import { useAccount } from 'wagmi';
+import { useCreateOrder } from '@/hooks/useOrders';
 import Navigation from '@/components/Navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Progress } from '@/components/ui/progress';
+// import { Progress } from '@/components/ui/progress';
 import { 
   ArrowUpDown, 
   Settings, 
-  Zap, 
-  Info, 
-  TrendingUp, 
-  Clock, 
-  Shield, 
   ChevronDown, 
-  Wallet, 
-  ExternalLink, 
-  RefreshCw, 
-  AlertTriangle,
-  ArrowRight,
-  Layers,
-  BarChart3,
-  History,
-  Target,
-  DollarSign,
-  Activity,
-  CheckCircle,
-  Check
+  RefreshCw,
+  Check,
+  Layers
 } from 'lucide-react';
 
 interface SwapState {
@@ -203,7 +189,7 @@ const CustomDropdown = ({
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: any[];
+  options: (TokenData | ChainData)[];
   type?: 'token' | 'chain';
   className?: string;
 }) => {
@@ -328,13 +314,13 @@ const CustomDropdown = ({
 
 const SwapPage = () => {
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const createOrderMutation = useCreateOrder();
   
   const [swapState, setSwapState] = useState<SwapState>({
     fromToken: 'ETH',
     toToken: 'USDC',
     fromChain: 'Ethereum',
-    toChain: 'Polygon',
+    toChain: 'Sepolia',
     fromAmount: '',
     slippage: '0.5',
     isAdvanced: false,
@@ -346,27 +332,23 @@ const SwapPage = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [estimatedOutput, setEstimatedOutput] = useState('');
   const [priceImpact, setPriceImpact] = useState('0.02');
-  const [routeInfo, setRouteInfo] = useState<any>(null);
+  const [routeInfo, setRouteInfo] = useState<{
+    exchangeRate: string;
+    estimatedGas: string;
+    minReceived: string;
+  } | null>(null);
 
+  // Available tokens - should be fetched from backend or chain config in production
   const tokens: TokenData[] = [
-    { symbol: 'ETH', name: 'Ethereum', logo: 'ETH', balance: '2.5847', price: 3240.50, change24h: 2.3, volume24h: '$12.5B' },
-    { symbol: 'USDC', name: 'USD Coin', logo: 'USDC', balance: '1,250.50', price: 1.00, change24h: 0.01, volume24h: '$8.2B' },
-    { symbol: 'BTC', name: 'Bitcoin', logo: 'BTC', balance: '0.1563', price: 67500.00, change24h: -0.8, volume24h: '$15.8B' },
-    { symbol: 'MATIC', name: 'Polygon', logo: 'MATIC', balance: '850.25', price: 0.85, change24h: 3.2, volume24h: '$450M' },
-    { symbol: 'SOL', name: 'Solana', logo: 'SOL', balance: '12.8', price: 180.25, change24h: -1.2, volume24h: '$2.1B' },
-    { symbol: 'SUI', name: 'Sui', logo: 'SUI', balance: '125.0', price: 3.15, change24h: 5.7, volume24h: '$180M' },
-    { symbol: 'APT', name: 'Aptos', logo: 'APT', balance: '45.2', price: 12.45, change24h: 2.8, volume24h: '$95M' },
+    { symbol: 'ETH', name: 'Ethereum', logo: 'ETH', balance: '0', price: 0, change24h: 0, volume24h: '' },
+    { symbol: 'USDC', name: 'USD Coin', logo: 'USDC', balance: '0', price: 0, change24h: 0, volume24h: '' },
+    { symbol: 'WETH', name: 'Wrapped Ethereum', logo: 'WETH', balance: '0', price: 0, change24h: 0, volume24h: '' },
+    { symbol: 'MATIC', name: 'Polygon', logo: 'MATIC', balance: '0', price: 0, change24h: 0, volume24h: '' },
   ];
 
   const chains: ChainData[] = [
     { name: 'Ethereum', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '25 gwei', status: 'normal' },
-    { name: 'Polygon', symbol: 'MATIC', color: 'from-neutral-600 to-neutral-800', logo: 'MATIC', gasPrice: '35 gwei', status: 'fast' },
-    { name: 'Arbitrum', symbol: 'ARB', color: 'from-neutral-600 to-neutral-800', logo: 'ARB', gasPrice: '0.5 gwei', status: 'fast' },
-    { name: 'Optimism', symbol: 'OP', color: 'from-neutral-600 to-neutral-800', logo: 'OP', gasPrice: '0.3 gwei', status: 'fast' },
-    { name: 'BNB Chain', symbol: 'BNB', color: 'from-neutral-600 to-neutral-800', logo: 'BNB', gasPrice: '3 gwei', status: 'normal' },
-    { name: 'Sui', symbol: 'SUI', color: 'from-neutral-600 to-neutral-800', logo: 'SUI', gasPrice: '0.001 SUI', status: 'fast' },
-    { name: 'Aptos', symbol: 'APT', color: 'from-neutral-600 to-neutral-800', logo: 'APT', gasPrice: '0.001 APT', status: 'fast' },
-    { name: 'Solana', symbol: 'SOL', color: 'from-neutral-600 to-neutral-800', logo: 'SOL', gasPrice: '0.00025 SOL', status: 'fast' },
+    { name: 'Sepolia', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '1 gwei', status: 'fast' },
   ];
 
   const recentTransactions = [
@@ -382,28 +364,157 @@ const SwapPage = () => {
 
   // Calculate estimated output
   useEffect(() => {
-    if (swapState.fromAmount && fromTokenData && toTokenData) {
-      const fromValue = parseFloat(swapState.fromAmount) * fromTokenData.price;
-      const estimated = (fromValue / toTokenData.price * 0.997).toFixed(6);
+    if (swapState.fromAmount && parseFloat(swapState.fromAmount) > 0) {
+      // Simple 1:1 exchange rate for testing
+      const inputAmount = parseFloat(swapState.fromAmount);
+      const estimated = (inputAmount * 0.997).toFixed(6); // 0.3% fee
       setEstimatedOutput(estimated);
       
       setRouteInfo({
-        route: ['Ethereum', 'Polygon Bridge', 'Polygon'],
-        gasEstimate: '$12.50',
-        priceImpact: '0.02%',
-        minReceived: (parseFloat(estimated) * (1 - parseFloat(swapState.slippage) / 100)).toFixed(6),
-        exchangeRate: `1 ${swapState.fromToken} = ${(fromTokenData.price / toTokenData.price).toFixed(4)} ${swapState.toToken}`
+        exchangeRate: '1.0',
+        estimatedGas: '$12.50',
+        minReceived: (parseFloat(estimated) * 0.995).toFixed(6)
       });
+    } else {
+      setEstimatedOutput('');
+      setRouteInfo(null);
     }
-  }, [swapState.fromAmount, swapState.fromToken, swapState.toToken, swapState.slippage, fromTokenData, toTokenData]);
+  }, [swapState.fromAmount]);
 
-  const handleSwap = () => {
-    if (!isConnected) return;
+  const handleSwap = async () => {
+    if (!isConnected || !address) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    if (!swapState.fromAmount || parseFloat(swapState.fromAmount) <= 0) {
+      console.error('Invalid amount');
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
+    
+    try {
+      // Import order builder
+      const { OrderBuilder } = await import('@/lib/orderBuilder');
+      
+      // Get chain IDs (convert chain names to IDs)
+      const getChainId = (chainName: string): number => {
+        const chainMap: Record<string, number> = {
+          'ethereum': 1,
+          'sepolia': 11155111
+        };
+        return chainMap[chainName.toLowerCase()] || 1;
+      };
+
+      const fromChainId = getChainId(swapState.fromChain);
+      const toChainId = getChainId(swapState.toChain);
+
+      // Validate swap parameters
+      const swapParams = {
+        fromToken: swapState.fromToken,
+        toToken: swapState.toToken,
+        fromChain: fromChainId,
+        toChain: toChainId,
+        fromAmount: swapState.fromAmount,
+        toAmount: estimatedOutput || '0',
+        maker: address,
+        orderType: swapState.orderType,
+        limitPrice: swapState.limitPrice,
+        slippage: swapState.slippage,
+        auctionDuration: 300 // 5 minutes
+      };
+
+      const validationErrors = OrderBuilder.validateSwapParams(swapParams);
+      if (validationErrors.length > 0) {
+        console.error('Validation errors:', validationErrors);
+        alert('Validation failed: ' + validationErrors.join(', '));
+        return;
+      }
+
+      // Get signer from wagmi
+      const { getWalletClient } = await import('wagmi/actions');
+      const { config } = await import('@/lib/wagmi');
+      const walletClient = await getWalletClient(config);
+      
+      if (!walletClient) {
+        throw new Error('No wallet client available');
+      }
+
+      // Convert viem wallet client to ethers signer
+      const { ethers } = await import('ethers');
+      
+      // Check if we have ethereum provider
+      if (!window.ethereum) {
+        throw new Error('No Ethereum provider found. Please install MetaMask or another wallet.');
+      }
+      
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      
+      // Check network
+      const network = await provider.getNetwork();
+      console.log('Current network:', network.name, 'Chain ID:', network.chainId);
+      
+      // Check balance (just for info, not blocking)
+      try {
+        const balance = await provider.getBalance(address);
+        console.log('ETH Balance:', ethers.formatEther(balance), 'ETH');
+        
+        if (balance === BigInt(0)) {
+          console.warn('⚠️ No ETH balance detected. You may need ETH for gas fees.');
+        }
+      } catch (balanceError) {
+        console.warn('Could not check balance:', balanceError);
+      }
+
+      // Build the Dutch auction order
+      console.log('Building Dutch auction order...');
+      const orderRequest = await OrderBuilder.buildDutchAuctionOrder(swapParams, signer);
+
+      console.log('Order built successfully:', orderRequest);
+
+      // Create the order via hook
+      const response = await createOrderMutation.mutateAsync(orderRequest);
+
+      if (response.success && response.data) {
+        console.log('✅ Order created successfully:', response.data);
+        
+        // Show success message
+        alert(`Order created successfully! Order ID: ${response.data.orderId}`);
+        
+        // Reset form
+        setSwapState(prev => ({ ...prev, fromAmount: '' }));
+        setEstimatedOutput('');
+        
+      } else {
+        throw new Error(response.error || 'Failed to create order');
+      }
+
+    } catch (error) {
+      console.error('❌ Swap failed:', error);
+      
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Handle specific error types
+        if (error.message.includes('BytesLike')) {
+          errorMessage = 'Invalid data format. Please try again.';
+        } else if (error.message.includes('rejected')) {
+          errorMessage = 'Transaction was rejected by user.';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds for gas fees.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        }
+      }
+      
+      alert(`Swap failed: ${errorMessage}`);
+    } finally {
       setIsLoading(false);
-      // Show success state
-    }, 3000);
+    }
   };
 
   const swapTokens = () => {
