@@ -1,74 +1,66 @@
-# Cross-Chain Dutch Auction Contracts (EVM)
+## Foundry
 
-This directory contains all the smart contracts needed for the cross-chain Dutch auction system based on 1inch Limit Order Protocol and cross-chain atomic swaps.
+**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-## 📁 Directory Structure
+Foundry consists of:
 
-### 🔧 Core (`/core/`)
-- **LimitOrderProtocol.sol** - Main protocol contract for limit orders
-- **OrderMixin.sol** - Core order execution logic and validation
-- **OrderLib.sol** - Order utility functions and calculations
+-   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
+-   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
+-   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
+-   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
 
-### 🎯 Extensions (`/extensions/`)
-- **DutchAuctionCalculator.sol** - Time-based price decay calculator for Dutch auctions
+## Documentation
 
-### 🔗 Escrow (`/escrow/`)
-- **EscrowFactory.sol** - Factory contract to create escrow clones
-- **BaseEscrowFactory.sol** - Abstract factory base with common functionality
-- **EscrowSrc.sol** - Source chain escrow for user tokens
-- **EscrowDst.sol** - Destination chain escrow for resolver tokens
-- **BaseEscrow.sol** - Abstract base escrow contract
-- **Escrow.sol** - Common escrow logic
-- **MerkleStorageInvalidator.sol** - Supports partial order fills
+https://book.getfoundry.sh/
 
-### 🤖 Resolver (`/resolver/`)
-- **Resolver.sol** - Resolver contract for cross-chain swap execution
+## Usage
 
-### 📋 Interfaces (`/interfaces/`)
-All interface definitions for the system contracts
+### Build
 
-### 📚 Libraries (`/libraries/`)
-Supporting libraries for order processing, escrow management, and utilities
+```shell
+$ forge build
+```
 
-### 🧪 Mocks (`/mocks/`)
-- **WrappedTokenMock.sol** - WETH mock for testing
+### Test
 
-## 🚀 Deployment Order
+```shell
+$ forge test
+```
 
-1. **Core Infrastructure** (deploy on all chains)
-   ```
-   1. LimitOrderProtocol
-   2. DutchAuctionCalculator
-   3. EscrowFactory
-   ```
+### Format
 
-2. **Resolver Network** (per resolver operator)
-   ```
-   1. Resolver (one per operator)
-   ```
+```shell
+$ forge fmt
+```
 
-## 🎯 Key Dependencies
+### Gas Snapshots
 
-- OpenZeppelin Contracts v5.0.0+
-- 1inch Solidity Utils v4.0.0+
-- 1inch Limit Order Protocol Utils v4.0.0+
+```shell
+$ forge snapshot
+```
 
-## 📝 Notes
+### Anvil
 
-### Cross-Chain Flow
-1. User creates Dutch auction order on source chain
-2. Resolvers compete by monitoring price decay
-3. Winner resolver fills order + creates EscrowSrc
-4. Resolver deploys EscrowDst on destination chain
-5. Atomic swap execution via secret reveal
+```shell
+$ anvil
+```
 
-### Security Considerations
-- Safety deposits required for all escrow operations
-- Timelocks prevent premature cancellations
-- Merkle proofs support secure partial fills
-- EIP-712 signatures ensure order authenticity
+### Deploy
 
-### Gas Optimization
-- Clone pattern for escrow deployment
-- Packed data structures for storage efficiency
-- Optimized calculation libraries
+```shell
+$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+```
+
+### Cast
+
+```shell
+$ cast <subcommand>
+```
+
+### Help
+
+```shell
+$ forge --help
+$ anvil --help
+$ cast --help
+```

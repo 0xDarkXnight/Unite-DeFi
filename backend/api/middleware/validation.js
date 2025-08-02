@@ -11,7 +11,7 @@ const { getSupportedChains } = require('../../config/chains');
  */
 const customValidators = {
   isEthereumAddress: (value) => {
-    return ethers.utils.isAddress(value);
+    return ethers.isAddress(value);
   },
   
   isValidChainId: (value) => {
@@ -30,8 +30,8 @@ const customValidators = {
   
   isPositiveBigNumber: (value) => {
     try {
-      const bn = ethers.BigNumber.from(value);
-      return bn.gt(0);
+      const bn = BigInt(value);
+      return bn > 0n;
     } catch {
       return false;
     }
@@ -191,8 +191,8 @@ const validationChains = {
  */
 const sanitizers = {
   normalizeAddress: (address) => {
-    if (typeof address === 'string' && ethers.utils.isAddress(address)) {
-      return ethers.utils.getAddress(address); // Checksum address
+    if (typeof address === 'string' && ethers.isAddress(address)) {
+      return ethers.getAddress(address); // Checksum address
     }
     return address;
   },

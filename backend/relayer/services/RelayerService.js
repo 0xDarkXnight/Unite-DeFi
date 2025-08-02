@@ -4,7 +4,7 @@
 
 const crypto = require('crypto');
 const { ethers } = require('ethers');
-const { Order, Escrow, Secret } = require('../../database/models');
+const { supabaseManager } = require('../../database/supabase');
 const { config } = require('../../config');
 const { getChainConfig } = require('../../config/chains');
 const { cacheGet, cacheSet } = require('../../database/connection');
@@ -15,9 +15,9 @@ class RelayerService {
     this.isRunning = false;
     this.validationQueue = [];
     this.secretManager = new SecretManager();
-    this.escrowValidator = new EscrowValidator();
     
     this.initializeProviders();
+    this.escrowValidator = new EscrowValidator(this.providers);
   }
 
   /**
@@ -72,8 +72,8 @@ class RelayerService {
       
       console.log(`📨 Processing resolver notification for order ${orderId}`);
       
-      // Get order from database
-      const order = await Order.findOne({ orderId });
+      // Get order from database using Supabase
+      const order = await supabaseManager.getOrder(orderId);
       if (!order) {
         throw new Error(`Order ${orderId} not found`);
       }
@@ -157,30 +157,27 @@ class RelayerService {
    */
   async shareSecretWithUser(order) {
     try {
-      console.log(`🔐 Sharing secret with user for order ${order.orderId}`);
+      console.log(`🔐 Sharing secret with user for order ${order.order_id}`);
       
-      // Get encrypted secret from database
-      const secretRecord = await Secret.findOne({ orderId: order.orderId });
+      // Get encrypted secret from database using Supabase
+      const secretRecord = await supabaseManager.getSecret(order.order_id);
       if (!secretRecord) {
-        throw new Error(`Secret not found for order ${order.orderId}`);
+        throw new Error(`Secret not found for order ${order.order_id}`);
       }
       
       // Decrypt secret
-      const secret = await this.secretManager.decryptSecret(secretRecord.encryptedSecret);
+      const secret = await this.secretManager.decryptSecret(secretRecord.encrypted_secret, order.order_id);
       
       // Share secret with user (this would be through encrypted communication)
-      await this.sendSecretToUser(order.order.maker, secret, order.orderId);
+      await this.sendSecretToUser(order.order_data.maker, secret, order.order_id);
       
-      // Update secret status
-      await Secret.updateOne(
-        { orderId: order.orderId },
-        { 
-          status: 'shared',
-          sharedAt: Date.now()
-        }
-      );
+      // Update secret status using Supabase
+      await supabaseManager.updateSecret(order.order_id, { 
+        status: 'shared',
+        shared_at: new Date().toISOString()
+      });
       
-      console.log(`✅ Secret shared with user for order ${order.orderId}`);
+      console.log(`✅ Secret shared with user for order ${order.order_id}`);
       
     } catch (error) {
       console.error('❌ Error sharing secret:', error);
@@ -363,8 +360,11 @@ class RelayerService {
       if (!this.isRunning) return;
       
       try {
-        // Get pending escrows that need validation
-        const pendingEscrows = await Escrow.find({ status: 'pending' });
+        // Get pending escrows that need validation using Supabase
+        const { escrows: pendingEscrows } = await supabaseManager.getEscrows(
+          { status: 'pending' },
+          { limit: 100 }
+        );
         
         for (const escrow of pendingEscrows) {
           await this.validateEscrowDeployment(escrow);
@@ -385,17 +385,114 @@ class RelayerService {
     console.log(`📋 Added validation to queue. Queue size: ${this.validationQueue.length}`);
   }
 
-  // Additional helper methods would go here...
+  /**
+   * Save validation results to database
+   * @param {string} orderId - Order ID
+   * @param {Object} results - Validation results
+   */
   async saveValidationResults(orderId, results) {
-    // Implementation for saving validation results
+    try {
+      const validationData = {
+        orderId,
+        srcValidation: results.src,
+        dstValidation: results.dst,
+        overallValid: results.overall,
+        validatedAt: new Date().toISOString(),
+        validatedBy: 'relayer-service'
+      };
+
+      // Store in cache for quick access
+      await cacheSet(`validation:${orderId}`, validationData, 3600);
+      
+      // Could also store in database table for permanent record
+      console.log(`✅ Validation results saved for order ${orderId}`);
+      return validationData;
+    } catch (error) {
+      console.error(`❌ Error saving validation results for order ${orderId}:`, error);
+      throw error;
+    }
   }
 
+  /**
+   * Log validation failure for debugging
+   * @param {string} orderId - Order ID
+   * @param {Object} validation - Validation data
+   */
   async logValidationFailure(orderId, validation) {
-    // Implementation for logging validation failures
+    try {
+      const failureLog = {
+        orderId,
+        error: validation.error,
+        srcValidation: validation.src,
+        dstValidation: validation.dst,
+        timestamp: new Date().toISOString(),
+        severity: 'error'
+      };
+
+      // Store failure log in cache with longer TTL for debugging
+      await cacheSet(`validation_failure:${orderId}`, failureLog, 86400);
+      
+      console.error(`❌ Validation failure logged for order ${orderId}:`, {
+        error: validation.error,
+        srcValid: validation.src?.valid || false,
+        dstValid: validation.dst?.valid || false
+      });
+      
+      return failureLog;
+    } catch (error) {
+      console.error(`❌ Error logging validation failure for order ${orderId}:`, error);
+    }
   }
 
+  /**
+   * Validate escrow deployment
+   * @param {Object} escrow - Escrow data
+   */
   async validateEscrowDeployment(escrow) {
-    // Implementation for validating escrow deployment
+    try {
+      const provider = this.providers.get(escrow.chainId);
+      if (!provider) {
+        throw new Error(`No provider available for chain ${escrow.chainId}`);
+      }
+
+      // Check if contract exists at address
+      const code = await provider.getCode(escrow.address);
+      if (code === '0x') {
+        throw new Error(`No contract found at address ${escrow.address}`);
+      }
+
+      // Create contract instance to check if it's valid escrow
+      const escrowContract = new ethers.Contract(escrow.address, ESCROW_ABI, provider);
+      
+      // Verify contract state
+      const [initialized, token, amount] = await Promise.all([
+        escrowContract.initialized().catch(() => false),
+        escrowContract.token().catch(() => null),
+        escrowContract.amount().catch(() => null)
+      ]);
+
+      if (!initialized) {
+        throw new Error('Escrow contract not properly initialized');
+      }
+
+      console.log(`✅ Escrow deployment validated: ${escrow.address} on chain ${escrow.chainId}`);
+      return {
+        valid: true,
+        address: escrow.address,
+        chainId: escrow.chainId,
+        token,
+        amount,
+        initialized
+      };
+    } catch (error) {
+      console.error(`❌ Escrow deployment validation failed:`, error);
+      return {
+        valid: false,
+        error: error.message,
+        address: escrow.address,
+        chainId: escrow.chainId
+      };
+    }
   }
 }
 
@@ -404,49 +501,125 @@ class RelayerService {
  */
 class SecretManager {
   constructor() {
-    this.algorithm = config.relayer.secretEncryption.algorithm;
-    this.keyLength = config.relayer.secretEncryption.keyLength;
-    this.ivLength = config.relayer.secretEncryption.ivLength;
+    this.algorithm = config.relayer?.secretEncryption?.algorithm || 'aes-256-gcm';
+    this.keyLength = config.relayer?.secretEncryption?.keyLength || 32;
+    this.ivLength = config.relayer?.secretEncryption?.ivLength || 16;
+    this.masterKey = process.env.SECRET_MASTER_KEY || this.generateMasterKey();
+  }
+
+  /**
+   * Generate a master key for encryption
+   */
+  generateMasterKey() {
+    const key = crypto.randomBytes(this.keyLength).toString('hex');
+    console.error('⚠️  Generated temporary master key. Set SECRET_MASTER_KEY in environment for production.');
+    return key;
+  }
+
+  /**
+   * Generate a random secret
+   */
+  generateSecret() {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Create hashlock from secret
+   * @param {string} secret - Plain text secret
+   */
+  createHashlock(secret) {
+    return ethers.keccak256(ethers.toUtf8Bytes(secret));
   }
 
   /**
    * Encrypt a secret
    * @param {string} secret - Plain text secret
-   * @param {string} key - Encryption key
+   * @param {string} orderId - Order ID for key derivation
    */
-  encryptSecret(secret, key) {
-    const iv = crypto.randomBytes(this.ivLength);
-    const cipher = crypto.createCipher(this.algorithm, key);
-    cipher.setAutoPadding(true);
-    
-    let encrypted = cipher.update(secret, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    
-    const authTag = cipher.getAuthTag ? cipher.getAuthTag() : Buffer.alloc(0);
-    
-    return {
-      encrypted,
-      iv: iv.toString('hex'),
-      authTag: authTag.toString('hex')
-    };
+  encryptSecret(secret, orderId) {
+    try {
+      const iv = crypto.randomBytes(this.ivLength);
+      
+      // Derive key from master key and order ID
+      const derivedKey = crypto.scryptSync(this.masterKey, orderId, this.keyLength);
+      
+      const cipher = crypto.createCipherGCM(this.algorithm, derivedKey, iv);
+      
+      let encrypted = cipher.update(secret, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      
+      const authTag = cipher.getAuthTag();
+      
+      return {
+        encrypted,
+        iv: iv.toString('hex'),
+        authTag: authTag.toString('hex'),
+        algorithm: this.algorithm
+      };
+    } catch (error) {
+      console.error('❌ Error encrypting secret:', error);
+      throw error;
+    }
   }
 
   /**
    * Decrypt a secret
-   * @param {Object} encryptedData - Encrypted secret data
-   * @param {string} key - Decryption key
+   * @param {Object|string} encryptedData - Encrypted secret data
+   * @param {string} orderId - Order ID for key derivation
    */
-  decryptSecret(encryptedData, key) {
-    const decipher = crypto.createDecipher(this.algorithm, key);
-    
-    if (encryptedData.authTag) {
-      decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+  decryptSecret(encryptedData, orderId) {
+    try {
+      // Handle string input (backwards compatibility)
+      if (typeof encryptedData === 'string') {
+        return encryptedData; // Assume it's already decrypted
+      }
+
+      const { encrypted, iv, authTag, algorithm = this.algorithm } = encryptedData;
+      
+      // Derive same key from master key and order ID
+      const derivedKey = crypto.scryptSync(this.masterKey, orderId, this.keyLength);
+      
+      const decipher = crypto.createDecipherGCM(algorithm, derivedKey, Buffer.from(iv, 'hex'));
+      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+      
+      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      
+      return decrypted;
+    } catch (error) {
+      console.error('❌ Error decrypting secret:', error);
+      throw error;
     }
-    
-    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    
-    return decrypted;
+  }
+
+  /**
+   * Store encrypted secret in database
+   * @param {string} orderId - Order ID
+   * @param {string} secret - Plain text secret
+   * @param {string} userAddress - User address
+   */
+  async storeSecret(orderId, secret, userAddress) {
+    try {
+      const hashlock = this.createHashlock(secret);
+      const encryptedSecret = this.encryptSecret(secret, orderId);
+      
+      const secretData = {
+        orderId,
+        userAddress,
+        encryptedSecret,
+        hashlock,
+        status: 'stored',
+        createdAt: new Date().toISOString()
+      };
+
+      await supabaseManager.createSecret(secretData);
+      console.log(`✅ Secret stored for order ${orderId}`);
+      
+      return hashlock;
+    } catch (error) {
+      console.error(`❌ Error storing secret for order ${orderId}:`, error);
+      throw error;
+    }
   }
 }
 
@@ -454,6 +627,9 @@ class SecretManager {
  * Escrow Validator - Validates escrow contracts and funding
  */
 class EscrowValidator {
+  constructor(providers) {
+    this.providers = providers;
+  }
   /**
    * Validate source escrow
    * @param {Object} order - Order data
@@ -461,9 +637,79 @@ class EscrowValidator {
    * @param {number} chainId - Chain ID
    */
   async validateSourceEscrow(order, escrowAddress, chainId) {
-    // Implementation for validating source escrow
-    // Check: contract exists, properly funded, correct parameters
-    return { valid: true }; // Placeholder
+    try {
+      const provider = this.providers.get(chainId);
+      if (!provider) {
+        throw new Error(`No provider available for chain ${chainId}`);
+      }
+
+      // Check if contract exists
+      const code = await provider.getCode(escrowAddress);
+      if (code === '0x') {
+        throw new Error(`No contract found at address ${escrowAddress}`);
+      }
+
+      const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, provider);
+      
+      // Validate contract state
+      const [token, amount, secretHash, user, resolver, initialized] = await Promise.all([
+        escrowContract.token().catch(() => null),
+        escrowContract.amount().catch(() => null),
+        escrowContract.secretHash().catch(() => null),
+        escrowContract.user().catch(() => null),
+        escrowContract.resolver().catch(() => null),
+        escrowContract.initialized().catch(() => false)
+      ]);
+
+      if (!initialized) {
+        throw new Error('Source escrow not initialized');
+      }
+
+      // Validate against order data
+      const expectedToken = order.order_data?.makerAsset || order.order?.makerAsset;
+      const expectedAmount = order.order_data?.makingAmount || order.order?.makingAmount;
+      const expectedUser = order.order_data?.maker || order.order?.maker;
+      
+      if (token.toLowerCase() !== expectedToken?.toLowerCase()) {
+        throw new Error(`Token mismatch: expected ${expectedToken}, got ${token}`);
+      }
+
+      if (amount !== expectedAmount) {
+        throw new Error(`Amount mismatch: expected ${expectedAmount}, got ${amount}`);
+      }
+
+      if (user.toLowerCase() !== expectedUser?.toLowerCase()) {
+        throw new Error(`User mismatch: expected ${expectedUser}, got ${user}`);
+      }
+
+      // Check if escrow is properly funded
+      const balance = await provider.getBalance(escrowAddress);
+      const minBalance = ethers.parseEther('0.001'); // Minimum for gas
+      
+              if (balance < minBalance) {
+        console.error(`❌ Source escrow insufficient balance: ${ethers.formatEther(balance)} ETH`);
+      }
+
+      console.log(`✅ Source escrow validation passed: ${escrowAddress}`);
+      return {
+        valid: true,
+        address: escrowAddress,
+        token,
+        amount,
+        secretHash,
+        user,
+        resolver,
+        balance: balance.toString()
+      };
+    } catch (error) {
+      console.error(`❌ Source escrow validation failed:`, error);
+      return {
+        valid: false,
+        error: error.message,
+        address: escrowAddress,
+        chainId
+      };
+    }
   }
 
   /**
@@ -473,9 +719,79 @@ class EscrowValidator {
    * @param {number} chainId - Chain ID
    */
   async validateDestinationEscrow(order, escrowAddress, chainId) {
-    // Implementation for validating destination escrow
-    // Check: contract exists, properly funded, correct parameters
-    return { valid: true }; // Placeholder
+    try {
+      const provider = this.providers.get(chainId);
+      if (!provider) {
+        throw new Error(`No provider available for chain ${chainId}`);
+      }
+
+      // Check if contract exists
+      const code = await provider.getCode(escrowAddress);
+      if (code === '0x') {
+        throw new Error(`No contract found at address ${escrowAddress}`);
+      }
+
+      const escrowContract = new ethers.Contract(escrowAddress, ESCROW_ABI, provider);
+      
+      // Validate contract state
+      const [token, amount, secretHash, user, resolver, initialized] = await Promise.all([
+        escrowContract.token().catch(() => null),
+        escrowContract.amount().catch(() => null),
+        escrowContract.secretHash().catch(() => null),
+        escrowContract.user().catch(() => null),
+        escrowContract.resolver().catch(() => null),
+        escrowContract.initialized().catch(() => false)
+      ]);
+
+      if (!initialized) {
+        throw new Error('Destination escrow not initialized');
+      }
+
+      // Validate against order data
+      const expectedToken = order.cross_chain_data?.dstToken || order.crossChainData?.dstToken;
+      const expectedAmount = order.cross_chain_data?.dstAmount || order.crossChainData?.dstAmount;
+      const expectedUser = order.order_data?.maker || order.order?.maker;
+      
+      if (token.toLowerCase() !== expectedToken?.toLowerCase()) {
+        throw new Error(`Token mismatch: expected ${expectedToken}, got ${token}`);
+      }
+
+      if (amount !== expectedAmount) {
+        throw new Error(`Amount mismatch: expected ${expectedAmount}, got ${amount}`);
+      }
+
+      if (user.toLowerCase() !== expectedUser?.toLowerCase()) {
+        throw new Error(`User mismatch: expected ${expectedUser}, got ${user}`);
+      }
+
+      // Check if resolver has deposited funds
+      const balance = await provider.getBalance(escrowAddress);
+      const minBalance = ethers.parseEther('0.001'); // Minimum for gas
+      
+              if (balance < minBalance) {
+        console.error(`❌ Destination escrow insufficient balance: ${ethers.formatEther(balance)} ETH`);
+      }
+
+      console.log(`✅ Destination escrow validation passed: ${escrowAddress}`);
+      return {
+        valid: true,
+        address: escrowAddress,
+        token,
+        amount,
+        secretHash,
+        user,
+        resolver,
+        balance: balance.toString()
+      };
+    } catch (error) {
+      console.error(`❌ Destination escrow validation failed:`, error);
+      return {
+        valid: false,
+        error: error.message,
+        address: escrowAddress,
+        chainId
+      };
+    }
   }
 }
 

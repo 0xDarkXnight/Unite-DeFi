@@ -9,49 +9,31 @@ const { getChainConfig, getSupportedChains } = require('./chains');
 const config = {
   // Environment
   NODE_ENV: process.env.NODE_ENV || 'development',
-  PORT: parseInt(process.env.PORT) || 3000,
+  PORT: parseInt(process.env.PORT) || 3003,
   
-  // Database Configuration
+  // Database Configuration - Supabase only
   database: {
-    mongodb: {
-      uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/cross-chain-auction',
-      options: {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        maxPoolSize: 10,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-      }
-    },
-    redis: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: parseInt(process.env.REDIS_DB) || 0,
-      keyPrefix: 'auction:',
+    supabase: {
+      connectionString: process.env.SUPABASE_CONNECTION_STRING || 'https://your-project-id.supabase.co?key=your-anon-key'
     }
   },
 
-  // Blockchain Configuration
+  // Blockchain Configuration - Sepolia only
   blockchain: {
-    supportedChains: getSupportedChains(),
-    defaultChain: parseInt(process.env.DEFAULT_CHAIN_ID) || 1,
+    supportedChains: getSupportedChains(), // Only Sepolia (11155111)
+    defaultChain: 11155111, // Sepolia
     getChainConfig,
     
     // Global blockchain settings
     maxRetries: 3,
     retryDelay: 1000,
     defaultGasLimit: 500000,
-    maxGasPrice: '100000000000', // 100 gwei
+    maxGasPrice: '50000000000', // 50 gwei for testnet
     
     // Event monitoring
     eventPollingInterval: 5000, // 5 seconds
     blockConfirmations: {
-      ethereum: 12,
-      polygon: 20,
-      bsc: 15,
-      arbitrum: 5,
-      optimism: 10
+      sepolia: 3 // Only Sepolia
     }
   },
 
@@ -92,9 +74,9 @@ const config = {
     // Bot settings
     bots: {
       maxConcurrentOrders: 10,
-      orderPollingInterval: 1000,    // 1 second
-      priceUpdateInterval: 5000,     // 5 seconds
-      profitCheckInterval: 2000,     // 2 seconds
+      orderPollingInterval: 30000,   // 30 seconds
+      priceUpdateInterval: 30000,    // 30 seconds
+      profitCheckInterval: 30000,    // 30 seconds
     },
     
     // Economic parameters
@@ -249,10 +231,9 @@ const config = {
   }
 };
 
-// Validation
+// Validation (relaxed for development)
 const validateConfig = () => {
   const required = [
-    'database.mongodb.uri',
     'blockchain.supportedChains'
   ];
   

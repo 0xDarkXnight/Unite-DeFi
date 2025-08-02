@@ -6,6 +6,7 @@ import { useCreateOrder } from '@/hooks/useOrders';
 import Navigation from '@/components/Navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { formatTokenAmount } from '@/lib/utils';
 // import { Progress } from '@/components/ui/progress';
 import { 
   ArrowUpDown, 
@@ -367,19 +368,23 @@ const SwapPage = () => {
     if (swapState.fromAmount && parseFloat(swapState.fromAmount) > 0) {
       // Simple 1:1 exchange rate for testing
       const inputAmount = parseFloat(swapState.fromAmount);
-      const estimated = (inputAmount * 0.997).toFixed(6); // 0.3% fee
-      setEstimatedOutput(estimated);
+      const estimated = (inputAmount * 0.997); // 0.3% fee
+      
+      // Format based on the target token using utility function
+      const formattedEstimated = formatTokenAmount(estimated, swapState.toToken);
+      console.log(`Formatting estimated output: ${estimated} ${swapState.toToken} -> ${formattedEstimated}`);
+      setEstimatedOutput(formattedEstimated);
       
       setRouteInfo({
         exchangeRate: '1.0',
         estimatedGas: '$12.50',
-        minReceived: (parseFloat(estimated) * 0.995).toFixed(6)
+        minReceived: formatTokenAmount(estimated * 0.995, swapState.toToken)
       });
     } else {
       setEstimatedOutput('');
       setRouteInfo(null);
     }
-  }, [swapState.fromAmount]);
+  }, [swapState.fromAmount, swapState.toToken]);
 
   const handleSwap = async () => {
     if (!isConnected || !address) {

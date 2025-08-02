@@ -1,59 +1,76 @@
 # Cross-Chain Dutch Auction Backend
 
-Backend system for cross-chain Dutch auction with automated resolvers and relayer service.
-
-## Quick Start
-
-```bash
-# Install dependencies
-npm install
-
-# Start all services
-npm start
-
-# Development mode with auto-restart
-npm run dev
-```
-
 ## Environment Setup
 
-Copy and configure environment variables:
+1. Copy the example environment file to create your own:
+
 ```bash
-# Required environment variables
-NODE_ENV=development
-MONGODB_URI=mongodb://localhost:27017/cross-chain-auction
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# Blockchain RPC URLs
-ETHEREUM_RPC_URL=https://eth-mainnet.alchemyapi.io/v2/YOUR_KEY
-POLYGON_RPC_URL=https://polygon-rpc.com
-
-# Resolver Configuration
-RESOLVER_PRIVATE_KEY=0x...
-RESOLVER_ADDRESS=0x...
-
-# Security
-JWT_SECRET=your-secret-key
+cp .env.example .env
 ```
 
-## Services
+2. Edit the `.env` file to set your own values:
+   - Set your Supabase connection string
+   - Configure your Sepolia RPC URL
+   - Set your resolver wallet details
+   - Adjust other settings as needed
 
-- **Relayer Service**: Manages secrets and validates escrows
-- **Resolver Bots**: Automated Dutch auction bidding
-- **API Server**: REST endpoints for frontend integration
+## Starting the Backend
 
-## API Endpoints
+The backend can be started in several ways using the provided script:
+
+### Start All Services
+
+```bash
+./scripts/start.sh all
+```
+
+This starts the API server, relayer, and resolver bots together.
+
+### Start Individual Services
+
+```bash
+# Start only the API server
+./scripts/start.sh api
+
+# Start only the relayer
+./scripts/start.sh relayer
+
+# Start only the resolver
+./scripts/start.sh resolver
+```
+
+### Stop All Services
+
+```bash
+./scripts/start.sh stop
+```
+
+### Check Service Status
+
+```bash
+./scripts/start.sh status
+```
+
+## Logs
+
+Logs are stored in the `logs` directory:
+- `backend.log` - Combined logs for all services
+- `api.log` - API server logs
+- `relayer.log` - Relayer service logs
+- `resolver.log` - Resolver bot logs
+
+## Database
+
+The backend uses Supabase as its database. Make sure to set the `SUPABASE_CONNECTION_STRING` in your `.env` file:
 
 ```
-GET    /api/orders              # List orders
-POST   /api/orders              # Create order
-GET    /api/orders/:id          # Get order details
-GET    /api/system/status       # System health
+SUPABASE_CONNECTION_STRING=https://your-project-id.supabase.co?key=your-anon-key
 ```
 
-## Dependencies
+## Blockchain Configuration
 
-- MongoDB 5.0+
-- Redis 6.0+
-- Node.js 18+
+Only Sepolia testnet is supported. Configure your RPC URL in the `.env` file:
+
+```
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/your-api-key
+```

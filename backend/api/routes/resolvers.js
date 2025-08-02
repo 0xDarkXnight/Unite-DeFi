@@ -4,7 +4,8 @@
 
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
-const { Resolver, ResolverOperation } = require('../../database/models');
+// const { Resolver, ResolverOperation } = require('../../database/models');
+const { supabaseManager } = require('../../database/supabase');
 const { requireRole } = require('../middleware/auth');
 const { validationChains, handleValidationErrors } = require('../middleware/validation');
 

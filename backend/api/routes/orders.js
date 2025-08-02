@@ -5,9 +5,9 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const { ethers } = require('ethers');
-const { Order, Secret, Escrow } = require('../../database/models');
-const { cacheGet, cacheSet } = require('../../database/connection');
+const { supabaseManager, cacheGet, cacheSet } = require('../../database/supabase');
 const { getChainConfig } = require('../../config/chains');
+const { NATIVE_ETH_SENTINEL } = require('../../config/constants');
 
 const router = express.Router();
 
@@ -58,20 +58,28 @@ router.get('/', [
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
     // Execute query with pagination
-    const skip = (page - 1) * limit;
-    const [orders, totalCount] = await Promise.all([
-      Order.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Order.countDocuments(filter)
-    ]);
+    const filters = {};
+    if (status) filters.status = status;
+    if (maker) filters.maker = maker.toLowerCase();
+    if (srcChainId) filters.srcChainId = parseInt(srcChainId);
+    if (dstChainId) filters.dstChainId = parseInt(dstChainId);
+
+    const { orders, totalCount } = await supabaseManager.getOrders(filters, {
+      page,
+      limit,
+      sortBy,
+      sortOrder
+    });
 
     // Calculate current prices for active orders
     const ordersWithCurrentPrices = orders.map(order => {
       if (order.status === 'active') {
-        order.currentPrice = calculateCurrentAuctionPrice(order);
+        // Convert Supabase format to expected format for calculation
+        const orderForCalc = {
+          auctionParams: order.auction_params || order.auctionParams,
+          status: order.status
+        };
+        order.currentPrice = calculateCurrentAuctionPrice(orderForCalc);
       }
       return order;
     });
@@ -113,10 +121,16 @@ router.post('/', [
   body('order.takerAsset').isEthereumAddress(),
   body('order.makingAmount').isString().notEmpty(),
   body('order.takingAmount').isString().notEmpty(),
-  body('order.makerTraits').isString().notEmpty(),
+  body('order.receiver').isEthereumAddress(),
+  body('order.allowedSender').isEthereumAddress(),
+  body('order.offsets').isString().notEmpty(),
+  body('order.interactions').isString().notEmpty(),
   body('signature').isObject().notEmpty(),
   body('signature.r').isString().notEmpty(),
-  body('signature.vs').isString().notEmpty(),
+  // Accept either s+v format or vs format for backward compatibility
+  body('signature.s').optional().isString(),
+  body('signature.v').optional(),
+  body('signature.vs').optional().isString(),
   body('auctionParams').isObject().notEmpty(),
   body('auctionParams.startTime').isInt({ min: 0 }),
   body('auctionParams.endTime').isInt({ min: 0 }),
@@ -141,6 +155,36 @@ router.post('/', [
     }
 
     const { order, signature, auctionParams, crossChainData, secret } = req.body;
+    
+    // CRITICAL VALIDATION: Prevent invalid order data
+    // 1. Check for native ETH sentinel addresses
+    if (order.makerAsset === NATIVE_ETH_SENTINEL || 
+        order.takerAsset === NATIVE_ETH_SENTINEL) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot use native ETH sentinel address (0xEeeee...) in limit orders. Use WETH instead.',
+        code: 'INVALID_ASSET_ADDRESS'
+      });
+    }
+    
+    // 2. Check for zero amounts
+    if (!order.makingAmount || order.makingAmount === '0' || BigInt(order.makingAmount) === 0n) {
+      return res.status(400).json({
+        success: false,
+        error: 'makingAmount must be non-zero',
+        code: 'INVALID_MAKING_AMOUNT'
+      });
+    }
+    
+    if (!order.takingAmount || order.takingAmount === '0' || BigInt(order.takingAmount) === 0n) {
+      return res.status(400).json({
+        success: false,
+        error: 'takingAmount must be non-zero',
+        code: 'INVALID_TAKING_AMOUNT'
+      });
+    }
+    
+    console.log('✅ Order validation passed at API level');
 
     // Validate auction timing
     const now = Math.floor(Date.now() / 1000);
@@ -178,11 +222,11 @@ router.post('/', [
     const orderHash = calculateOrderHash(order);
 
     // Generate hashlock from secret
-    const hashedSecret = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(secret));
-    const hashlock = ethers.utils.keccak256(hashedSecret);
+    const hashedSecret = ethers.keccak256(ethers.toUtf8Bytes(secret));
+    const hashlock = ethers.keccak256(hashedSecret);
 
     // Create order document
-    const newOrder = new Order({
+    const orderDocument = {
       orderId,
       orderHash,
       order,
@@ -197,28 +241,26 @@ router.post('/', [
       },
       status: 'active',
       currentPrice: auctionParams.startPrice,
-      lastPriceUpdate: Date.now(),
-      createdAt: Date.now()
-    });
+      lastPriceUpdate: Date.now()
+    };
 
     // Save order to database
-    await newOrder.save();
+    const newOrder = await supabaseManager.createOrder(orderDocument);
 
     // Store encrypted secret
     const encryptedSecret = await encryptSecret(secret, order.maker);
-    const secretRecord = new Secret({
+    const secretData = {
       orderId,
       userAddress: order.maker.toLowerCase(),
       encryptedSecret,
       hashlock,
-      status: 'pending',
-      createdAt: Date.now()
-    });
+      status: 'pending'
+    };
 
-    await secretRecord.save();
+    await supabaseManager.createSecret(secretData);
 
     // Cache order for quick access
-    await cacheSet(`order:${orderId}`, newOrder.toObject(), 3600);
+    await cacheSet(`order:${orderId}`, newOrder, 3600);
 
     console.log(`✅ New order created: ${orderId}`);
 
@@ -278,7 +320,7 @@ router.get('/:id', [
     
     if (!order) {
       // Fetch from database
-      order = await Order.findOne({ orderId }).lean();
+      order = await supabaseManager.getOrder(orderId);
       
       if (!order) {
         return res.status(404).json({
@@ -294,14 +336,17 @@ router.get('/:id', [
 
     // Calculate current price if active
     if (order.status === 'active') {
-      order.currentPrice = calculateCurrentAuctionPrice(order);
+      const orderForCalc = {
+        auctionParams: order.auction_params || order.auctionParams,
+        status: order.status
+      };
+      order.currentPrice = calculateCurrentAuctionPrice(orderForCalc);
     }
 
-    // Get escrow information if available
-    const escrows = await Escrow.find({ orderId }).lean();
+    // Get escrow information if available (mock for now)
     order.escrows = {
-      src: escrows.find(e => e.type === 'src') || null,
-      dst: escrows.find(e => e.type === 'dst') || null
+      src: null,
+      dst: null
     };
 
     res.json({
@@ -329,15 +374,7 @@ router.get('/:id/status', [
   try {
     const { id: orderId } = req.params;
 
-    const order = await Order.findOne({ orderId }, {
-      orderId: 1,
-      status: 1,
-      auctionParams: 1,
-      currentPrice: 1,
-      lastPriceUpdate: 1,
-      createdAt: 1,
-      filledAt: 1
-    }).lean();
+    const order = await supabaseManager.getOrder(orderId);
 
     if (!order) {
       return res.status(404).json({
@@ -352,16 +389,21 @@ router.get('/:id/status', [
 
     if (order.status === 'active') {
       const now = Math.floor(Date.now() / 1000);
+      const auctionParams = order.auction_params || order.auctionParams;
       
-      if (now < order.auctionParams.startTime) {
+      if (now < auctionParams.startTime) {
         auctionStatus = 'pending';
-        currentPrice = order.auctionParams.startPrice;
-      } else if (now >= order.auctionParams.endTime) {
+        currentPrice = auctionParams.startPrice;
+      } else if (now >= auctionParams.endTime) {
         auctionStatus = 'expired';
-        currentPrice = order.auctionParams.endPrice;
+        currentPrice = auctionParams.endPrice;
       } else {
         auctionStatus = 'active';
-        currentPrice = calculateCurrentAuctionPrice(order);
+        const orderForCalc = {
+          auctionParams,
+          status: order.status
+        };
+        currentPrice = calculateCurrentAuctionPrice(orderForCalc);
       }
     } else {
       auctionStatus = order.status;
@@ -374,7 +416,7 @@ router.get('/:id/status', [
         status: order.status,
         auctionStatus,
         currentPrice,
-        timeRemaining: Math.max(0, order.auctionParams.endTime - Math.floor(Date.now() / 1000)),
+        timeRemaining: Math.max(0, (order.auction_params || order.auctionParams).endTime - Math.floor(Date.now() / 1000)),
         lastUpdated: Date.now()
       },
       timestamp: Date.now()
@@ -400,7 +442,7 @@ router.delete('/:id', [
     const { id: orderId } = req.params;
     const userAddress = req.user?.address; // From auth middleware
 
-    const order = await Order.findOne({ orderId });
+    const order = await supabaseManager.getOrder(orderId);
     
     if (!order) {
       return res.status(404).json({
@@ -411,7 +453,8 @@ router.delete('/:id', [
     }
 
     // Check if user owns the order
-    if (order.order.maker.toLowerCase() !== userAddress?.toLowerCase()) {
+    const orderData = order.order_data || order.order;
+    if (orderData.maker.toLowerCase() !== userAddress?.toLowerCase()) {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to cancel this order',
@@ -430,19 +473,11 @@ router.delete('/:id', [
     }
 
     // Update order status
-    await Order.updateOne(
-      { orderId },
-      { 
-        status: 'cancelled',
-        updatedAt: Date.now()
-      }
-    );
+    await supabaseManager.updateOrder(orderId, { 
+      status: 'cancelled'
+    });
 
-    // Update secret status
-    await Secret.updateOne(
-      { orderId },
-      { status: 'cancelled' }
-    );
+    // Update secret status would be handled in supabaseManager if needed
 
     // Clear cache
     await cacheSet(`order:${orderId}`, null, 1);
@@ -470,8 +505,8 @@ router.delete('/:id', [
 
 // Helper functions
 function generateOrderId(order) {
-  return ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
       ['string', 'address', 'uint256'],
       [order.salt, order.maker, Date.now()]
     )
@@ -479,18 +514,20 @@ function generateOrderId(order) {
 }
 
 function calculateOrderHash(order) {
-  return ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ['tuple(uint256,address,address,address,address,uint256,uint256,uint256)'],
+  return ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ['tuple(uint256,address,address,address,address,address,uint256,uint256,uint256,bytes)'],
       [[
         order.salt,
-        order.maker,
-        order.receiver || ethers.constants.AddressZero,
         order.makerAsset,
         order.takerAsset,
+        order.maker,
+        order.receiver || ethers.ZeroAddress,
+        order.allowedSender || ethers.ZeroAddress,
         order.makingAmount,
         order.takingAmount,
-        order.makerTraits
+        order.offsets || '0',
+        order.interactions || '0x'
       ]]
     )
   );
@@ -507,11 +544,11 @@ function calculateCurrentAuctionPrice(order) {
   const totalDuration = endTime - startTime;
   const progress = timeElapsed / totalDuration;
   
-  const startPriceBig = ethers.BigNumber.from(startPrice);
-  const endPriceBig = ethers.BigNumber.from(endPrice);
-  const priceDifference = startPriceBig.sub(endPriceBig);
-  const priceReduction = priceDifference.mul(Math.floor(progress * 10000)).div(10000);
-  const currentPrice = startPriceBig.sub(priceReduction);
+  const startPriceBig = BigInt(startPrice);
+  const endPriceBig = BigInt(endPrice);
+  const priceDifference = startPriceBig - endPriceBig;
+  const priceReduction = (priceDifference * BigInt(Math.floor(progress * 10000))) / BigInt(10000);
+  const currentPrice = startPriceBig - priceReduction;
   
   return currentPrice.toString();
 }

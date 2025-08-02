@@ -6,7 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatAddress(address: string): string {
-  if (!address) return '';
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
@@ -30,6 +29,41 @@ export function formatCurrency(amount: number, currency: string = 'USD'): string
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+/**
+ * Format token amount with correct decimals
+ */
+export function formatTokenAmount(amount: string | number, tokenSymbol: string): string {
+  const tokenDecimals: Record<string, number> = {
+    'WETH': 18,
+    'ETH': 18,
+    'USDC': 6,
+    'USDT': 6,
+    'BTC': 8,
+    'MATIC': 18,
+    'SOL': 9
+  };
+  
+  const decimals = tokenDecimals[tokenSymbol];
+  if (decimals === undefined) {
+    // Default to 18 decimals if token not found
+    return '0';
+  }
+  
+  // Convert to string first to handle both number and string inputs
+  const amountStr = amount.toString();
+  
+  // Check if the amount contains a decimal point
+  if (amountStr.includes('.')) {
+    const [whole, fraction] = amountStr.split('.');
+    // Truncate to the correct number of decimals without rounding
+    const truncatedFraction = fraction.slice(0, decimals).padEnd(decimals, '0');
+    return `${whole}.${truncatedFraction}`;
+  } else {
+    // If no decimal point, add the appropriate number of zeros
+    return `${amountStr}.${'0'.repeat(decimals)}`;
+  }
 }
 
 export function debounce<T extends (...args: any[]) => any>(

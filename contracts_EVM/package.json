@@ -1,0 +1,24 @@
+{
+  "name": "contracts_evm",
+  "version": "1.0.0",
+  "description": "This directory contains all the smart contracts needed for the cross-chain Dutch auction system based on 1inch Limit Order Protocol and cross-chain atomic swaps.",
+  "main": "deploy.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@1inch/solidity-utils": "^6.6.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-verify": "^2.1.0",
+    "@openzeppelin/contracts": "^5.4.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "dotenv": "^17.2.1",
+    "hardhat": "^2.26.1"
+  }
+}
