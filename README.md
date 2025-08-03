@@ -1,67 +1,89 @@
-<div align="center">
-    <h1>🚀 Unite DeFi</h1>
-    <p><strong>Cross-Chain Dutch Auction Protocol with Limit Orders</strong></p>
-    <p>Building the future of decentralized cross-chain trading</p>
-</div>
+# Unite-DeFi
 
-<div align="center">
-    <img src="https://img.shields.io/badge/Status-Testing%20Phase-orange" alt="Testing Phase">
-    <img src="https://img.shields.io/badge/Chain-Sepolia%20Testnet-blue" alt="Sepolia Testnet">
-    <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
-</div>
+Unite-DeFi is a comprehensive cross-chain decentralized exchange platform that implements advanced limit order protocols and Dutch auction mechanisms. Built on top of the 1inch Limit Order Protocol v4, it enables secure and efficient cross-chain trading with atomic swaps and privacy-preserving features.
 
----
+## 🏗️ System Architecture
 
-## 📋 Project Overview
+![System Architecture](./assets/architecture-diagram.png)
 
-**Unite DeFi** is an innovative cross-chain Dutch auction protocol that combines the efficiency of limit orders with the dynamic pricing of Dutch auctions. This project enables seamless trading across multiple blockchain networks with atomic swaps and advanced order management.
+The system operates through four distinct phases:
 
-### 🎯 Current Status
-**⚠️ This is a testing phase implementation for Sepolia testnet only.**
-- This is one of the iterations and not the final codebase
-- Currently testing on Sepolia chain, not the full cross-chain protocol
-- All features are in development and testing phase
-- Not production-ready
+### Phase 1: Announcement
+- **Maker** initiates fusion orders with EIP-712 hash signatures
+- **Relayer Service** processes and shares orders with resolvers
+- **Resolvers** receive order information and prepare for execution
 
----
+### Phase 2: Deposit
+- Tokens are deposited into escrow contracts on both source and destination chains
+- **EscrowSrcSepolia** handles deposits on the source chain
+- **EscrowDstSui Devnet** manages deposits on the destination chain
 
-## 🏗️ Architecture
+### Phase 3: Withdrawal
+- Secure withdrawal process using secrets shared after finality
+- Cross-chain coordination ensures atomic swaps
 
-### Smart Contracts (`contracts_EVM/`)
-- **`SimpleLimitOrderProtocol.sol`** - Core limit order functionality
-- **`SimpleDutchAuctionCalculator.sol`** - Dynamic pricing calculations
-- **`SimpleEscrowFactory.sol`** - Cross-chain escrow management
-- **`SimpleEscrowSrc.sol`** - Source chain escrow contracts
-- **`SimpleEscrowDst.sol`** - Destination chain escrow contracts
-- **`SimpleResolver.sol`** - Order resolution and execution
+### Phase 4: Recovery (Optional)
+- Fallback mechanism for failed transactions
+- Ensures user funds are never permanently locked
 
-### Backend (`backend/`)
-- **API Server** - RESTful API for order management
-- **Relayer Service** - Cross-chain transaction relaying
-- **Resolver Bot** - Automated order execution
-- **Database** - Order tracking and state management
+## 🌟 Key Features
 
-### Frontend (`frontend/`)
-- **Next.js Application** - Modern React-based UI
-- **Wallet Integration** - RainbowKit + Wagmi
-- **Order Management** - Create, view, and manage orders
-- **Real-time Updates** - Live order status tracking
+### Cross-Chain Trading
+- **Multi-chain Support**: Native support for Ethereum, Sepolia testnet, and Sui networks
+- **Atomic Swaps**: Guaranteed execution or complete rollback
+- **Bridge-Free**: Direct cross-chain trading without traditional bridges
 
----
+### Advanced Order Types
+- **Limit Orders**: Classic buy/sell orders at specific prices
+- **Dutch Auctions**: Time-decreasing price mechanisms
+- **Range Orders**: Dynamic pricing based on volume
+- **Conditional Orders**: Execute based on on-chain conditions
+
+### Privacy & Security
+- **EIP-712 Signatures**: Secure order signing standard
+- **Escrow Protection**: Funds secured in smart contracts
+- **Resolver Network**: Decentralized execution layer
+- **Secret Sharing**: Privacy-preserving execution mechanism
+
+## 🛠️ Technology Stack
+
+### Smart Contracts
+- **EVM Contracts** (`/contracts_EVM/`)
+  - Solidity-based contracts for Ethereum-compatible chains
+  - Foundry framework for testing and deployment
+  - Integration with 1inch Limit Order Protocol
+
+- **Sui Contracts** (`/contracts_sui/`)
+  - Move-based contracts for Sui blockchain
+  - Native Sui object model implementation
+
+### Backend Services
+- **API Server** (`/backend/`)
+  - Node.js with Express framework
+  - RESTful API endpoints for order management
+  - WebSocket support for real-time updates
+  - Database integration with Supabase
+
+### Frontend Application
+- **React/Next.js** (`/frontend/`)
+  - Modern web interface built with Next.js 15
+  - TypeScript for type safety
+  - Tailwind CSS for styling
+  - RainbowKit for wallet connections
+  - Wagmi for Ethereum interactions
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+
+- Node.js v18+ 
 - npm or yarn
-- MetaMask or compatible wallet
-- Sepolia testnet ETH
+- Git
 
 ### Installation
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/0xDarkXnight/Unite-DeFi.git
+git clone https://github.com/your-username/Unite-DeFi.git
 cd Unite-DeFi
 ```
 
@@ -70,146 +92,178 @@ cd Unite-DeFi
 # Root dependencies
 npm install
 
-# Backend dependencies
-cd backend
-npm install
-
 # Frontend dependencies
-cd ../frontend
-npm install
+cd frontend && npm install && cd ..
+
+# Backend dependencies  
+cd backend && npm install && cd ..
+
+# Contract dependencies
+cd contracts_EVM && npm install && cd ..
 ```
 
 3. **Environment Setup**
 ```bash
 # Copy environment files
 cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# Configure your environment variables
+cp frontend/.env.example frontend/.env.local
 ```
 
-4. **Start Development Servers**
+4. **Start the development environment**
 ```bash
-# Terminal 1: Backend
-cd backend
-npm run dev
+# Start backend services
+./setup-backend.sh
 
-# Terminal 2: Frontend
-cd frontend
-npm run dev
+# In a new terminal, start frontend
+cd frontend && npm run dev
+```
 
-# Terminal 3: Smart Contract Deployment (if needed)
+## 📁 Project Structure
+
+```
+Unite-DeFi/
+├── backend/                 # Node.js API server
+│   ├── api/                # API routes and middleware
+│   ├── config/             # Configuration files
+│   ├── database/           # Database models and connections
+│   ├── relayer/            # Relayer service components
+│   └── resolver/           # Resolver bots and services
+├── contracts_EVM/          # Ethereum smart contracts
+│   ├── src/                # Solidity contract sources
+│   ├── script/             # Deployment scripts
+│   └── test/               # Contract tests
+├── contracts_sui/          # Sui smart contracts
+│   ├── sources/            # Move contract sources
+│   └── tests/              # Move tests
+└── frontend/               # React/Next.js frontend
+    ├── src/app/            # Next.js app directory
+    ├── src/components/     # React components
+    ├── src/hooks/          # Custom React hooks
+    └── src/lib/            # Utility libraries
+```
+
+## 🔧 Development
+
+### Running Tests
+```bash
+# Smart contract tests (EVM)
 cd contracts_EVM
-npx hardhat deploy --network sepolia
-```
+forge test
 
----
+# Smart contract tests (Sui)
+cd contracts_sui
+sui move test
 
-## 🔧 Features
-
-### Core Functionality
-- **Cross-Chain Dutch Auctions** - Dynamic pricing across networks
-- **Limit Orders** - Traditional limit order functionality
-- **Atomic Swaps** - Secure cross-chain token exchanges
-- **Escrow System** - Trustless cross-chain asset management
-- **Order Resolution** - Automated order execution
-
-### Advanced Features
-- **Dynamic Pricing** - Real-time price calculations
-- **Multi-Chain Support** - Extensible for multiple networks
-- **Gas Optimization** - Efficient transaction handling
-- **Security** - Comprehensive safety measures
-
----
-
-## 📚 Documentation
-
-- **Smart Contracts**: See `contracts_EVM/` for contract documentation
-- **API Reference**: Backend API documentation in `backend/README.md`
-- **Frontend Guide**: UI/UX documentation in `frontend/README.md`
-- **Deployment**: See `contracts_EVM/deploy.js` for deployment scripts
-
----
-
-## 🧪 Testing
-
-### Smart Contracts
-```bash
-cd contracts_EVM
-npx hardhat test
-```
-
-### Backend API
-```bash
+# Backend tests
 cd backend
 npm test
-```
 
-### Frontend
-```bash
+# Frontend tests
 cd frontend
 npm test
 ```
 
----
+### Building for Production
+```bash
+# Build all components
+npm run build
 
-## 🔒 Security
+# Build specific components
+cd frontend && npm run build     # Frontend
+cd backend && npm run build      # Backend
+cd contracts_EVM && forge build  # EVM contracts
+```
 
-**⚠️ Security Notice**
-- This is a testing implementation
-- Not audited for production use
-- Use only on testnets
-- Do not use with real funds
+### Deployment
 
-### Security Features
-- EIP-712 signature verification
-- Reentrancy protection
-- Access control mechanisms
-- Comprehensive input validation
+#### Smart Contracts
+```bash
+# Deploy EVM contracts
+cd contracts_EVM
+forge script script/Deploy.s.sol --broadcast --rpc-url $RPC_URL
 
----
+# Deploy Sui contracts
+cd contracts_sui
+sui client publish --gas-budget 50000000
+```
+
+#### Backend Services
+```bash
+cd backend
+npm run deploy
+```
+
+#### Frontend Application
+```bash
+cd frontend
+npm run build
+npm run export  # For static deployment
+```
+
+## 🔐 Security Features
+
+- **Multi-signature Support**: Contract-level multi-sig capabilities
+- **Time-locked Operations**: Configurable time delays for sensitive operations
+- **Emergency Pause**: Circuit breaker functionality
+- **Upgradeable Contracts**: Proxy pattern for contract upgrades
+- **Access Control**: Role-based permissions system
+
+## 🌐 Supported Networks
+
+### Mainnet
+- Ethereum
+- Sui
+
+### Testnets
+- Sepolia (Ethereum)
+- Sui Devnet
+
+## 📖 API Documentation
+
+### Order Management
+- `POST /api/orders` - Create new order
+- `GET /api/orders` - Retrieve orders
+- `PUT /api/orders/:id` - Update order
+- `DELETE /api/orders/:id` - Cancel order
+
+### Escrow Operations
+- `POST /api/escrows` - Create escrow
+- `GET /api/escrows/:id` - Get escrow status
+- `POST /api/escrows/:id/deposit` - Deposit funds
+- `POST /api/escrows/:id/withdraw` - Withdraw funds
+
+### System Status
+- `GET /api/system/health` - System health check
+- `GET /api/system/stats` - Platform statistics
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our contributing guidelines:
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests
+4. Add tests for new functionality
 5. Submit a pull request
-
-### Development Guidelines
-- Follow Solidity best practices
-- Write comprehensive tests
-- Update documentation
-- Use conventional commits
-
----
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
----
-
 ## 🙏 Acknowledgments
 
-- Built on the foundation of 1inch Limit Order Protocol
-- Inspired by cross-chain DeFi innovations
-- Community-driven development
-
----
+- Built on [1inch Limit Order Protocol v4](https://docs.1inch.io/docs/limit-order-protocol/introduction)
+- Powered by [Foundry](https://book.getfoundry.sh/) for EVM development
+- Utilizes [Sui Move](https://sui.io/) for next-generation blockchain functionality
+- Frontend built with [Next.js](https://nextjs.org/) and [React](https://reactjs.org/)
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/0xDarkXnight/Unite-DeFi/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/0xDarkXnight/Unite-DeFi/discussions)
-- **Documentation**: See individual component READMEs
+- **Documentation**: [Link to docs]
+- **Discord**: [Community Discord]
+- **Twitter**: [@Unite_DeFi]
+- **Email**: support@unite-defi.com
 
 ---
 
-<div align="center">
-    <p><strong>🚧 This project is in active development. Use at your own risk. 🚧</strong></p>
-    <p>Built with ❤️ for the DeFi community</p>
-</div>
+**Disclaimer**: This software is in active development. Use at your own risk and never invest more than you can afford to lose.
