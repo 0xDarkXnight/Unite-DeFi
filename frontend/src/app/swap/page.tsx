@@ -343,13 +343,12 @@ const SwapPage = () => {
   const tokens: TokenData[] = [
     { symbol: 'ETH', name: 'Ethereum', logo: 'ETH', balance: '0', price: 0, change24h: 0, volume24h: '' },
     { symbol: 'USDC', name: 'USD Coin', logo: 'USDC', balance: '0', price: 0, change24h: 0, volume24h: '' },
-    { symbol: 'WETH', name: 'Wrapped Ethereum', logo: 'WETH', balance: '0', price: 0, change24h: 0, volume24h: '' },
-    { symbol: 'MATIC', name: 'Polygon', logo: 'MATIC', balance: '0', price: 0, change24h: 0, volume24h: '' },
   ];
 
   const chains: ChainData[] = [
-    { name: 'Ethereum', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '25 gwei', status: 'normal' },
-    { name: 'Sepolia', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '1 gwei', status: 'fast' },
+    { name: 'Ethereum', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '', status: 'normal' },
+    { name: 'Sepolia', symbol: 'ETH', color: 'from-neutral-600 to-neutral-800', logo: 'ETH', gasPrice: '', status: 'fast' },
+    { name: 'Sui', symbol: 'Sui', color: 'from-neutral-600 to-neutral-800', logo: '', gasPrice: '', status: 'fast' },
   ];
 
   const recentTransactions = [

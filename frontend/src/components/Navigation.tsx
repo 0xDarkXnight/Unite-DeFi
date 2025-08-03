@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Zap, Menu, X, ExternalLink, ArrowUpDown } from 'lucide-react';
 import { Button } from './ui/Button';
 import { CustomConnectButton, MobileCustomConnectButton } from './CustomConnectButton';
+import { SuiConnectButton } from './SuiConnectButton';
 
 const Navigation: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -53,8 +54,9 @@ const Navigation: React.FC = () => {
         </div>
 
         {/* Desktop Actions */}
-        <div className="hidden md:flex items-center space-x-6">
+        <div className="hidden md:flex items-center space-x-4">
           <CustomConnectButton />
+          <SuiConnectButton />
         </div>
 
         {/* Mobile Menu Button */}
@@ -93,6 +95,7 @@ const Navigation: React.FC = () => {
               </Button>
               
               <MobileCustomConnectButton />
+              <SuiConnectButton />
             </div>
           </div>
         </div>
