@@ -1,0 +1,14 @@
+[package]
+name = "simple_limit_order_protocol"
+version = "1.0.0"
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/mainnet" }
+
+[addresses]
+simple_limit_order_protocol = "0x0"
+
+[dev-dependencies]
+
+[dev-addresses]
