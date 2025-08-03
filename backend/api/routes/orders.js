@@ -223,6 +223,10 @@ router.post('/', [
 
     // Generate hashlock from secret
     const hashedSecret = ethers.keccak256(ethers.toUtf8Bytes(secret));
+    
+    // NEW FLOW: User funds should be deposited to temporary storage when order is created
+    // The frontend should call SimpleLimitOrderProtocol.createAndDepositOrder() 
+    // which will automatically deposit funds to TemporaryFundStorage
     const hashlock = ethers.keccak256(hashedSecret);
 
     // Create order document
@@ -514,23 +518,46 @@ function generateOrderId(order) {
 }
 
 function calculateOrderHash(order) {
-  return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ['tuple(uint256,address,address,address,address,address,uint256,uint256,uint256,bytes)'],
-      [[
-        order.salt,
-        order.makerAsset,
-        order.takerAsset,
-        order.maker,
-        order.receiver || ethers.ZeroAddress,
-        order.allowedSender || ethers.ZeroAddress,
-        order.makingAmount,
-        order.takingAmount,
-        order.offsets || '0',
-        order.interactions || '0x'
-      ]]
-    )
-  );
+  // CRITICAL FIX: Use same EIP-712 hash as SimpleLimitOrderProtocol contract
+  // This must match: orderHash = _hashTypedDataV4(hashOrder(order))
+  
+  const domain = {
+    name: "1inch Limit Order Protocol",
+    version: "4",
+    chainId: 11155111, // Sepolia
+    verifyingContract: "0x584c43954CfbA4C0Cb00eECE36d1dcc249ae2dfD" // SimpleLimitOrderProtocol address
+  };
+
+  const types = {
+    Order: [
+      { name: "salt", type: "uint256" },
+      { name: "makerAsset", type: "address" },
+      { name: "takerAsset", type: "address" },
+      { name: "maker", type: "address" },
+      { name: "receiver", type: "address" },
+      { name: "allowedSender", type: "address" },
+      { name: "makingAmount", type: "uint256" },
+      { name: "takingAmount", type: "uint256" },
+      { name: "offsets", type: "uint256" },
+      { name: "interactions", type: "bytes" }
+    ]
+  };
+
+  const orderData = {
+    salt: order.salt,
+    makerAsset: order.makerAsset,
+    takerAsset: order.takerAsset,
+    maker: order.maker,
+    receiver: order.receiver || ethers.ZeroAddress,
+    allowedSender: order.allowedSender || ethers.ZeroAddress,
+    makingAmount: order.makingAmount,
+    takingAmount: order.takingAmount,
+    offsets: order.offsets || '0',
+    interactions: order.interactions || '0x'
+  };
+
+  // Use ethers.js to calculate EIP-712 hash
+  return ethers.TypedDataEncoder.hash(domain, types, orderData);
 }
 
 function calculateCurrentAuctionPrice(order) {
@@ -558,5 +585,91 @@ async function encryptSecret(secret, userAddress) {
   // For now, return a simple encoded version
   return Buffer.from(secret + userAddress).toString('base64');
 }
+
+/**
+ * GET /api/orders/:id/secret - Get secret for atomic swap completion
+ */
+router.get('/:id/secret', [
+  param('id').isString().notEmpty(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array(),
+        timestamp: Date.now()
+      });
+    }
+
+    const { id } = req.params;
+    const userAddress = req.headers['user-address']?.toLowerCase();
+
+    // Get order from database
+    const order = await supabaseManager.getOrder(id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found',
+        timestamp: Date.now()
+      });
+    }
+
+    // Check if user is authorized (maker of the order)
+    if (!userAddress || order.order.maker.toLowerCase() !== userAddress) {
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to access this order secret',
+        timestamp: Date.now()
+      });
+    }
+
+    // Check if order is in a state where secret can be accessed
+    const validStatuses = ['awaiting_user_action', 'active', 'filled'];
+    if (!validStatuses.includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Order is not in a valid state for secret access',
+        details: `Current status: ${order.status}`,
+        timestamp: Date.now()
+      });
+    }
+
+    // Get the secret from the secrets table
+    const secret = await supabaseManager.getSecret(id);
+    if (!secret) {
+      return res.status(404).json({
+        success: false,
+        error: 'Secret not found for this order',
+        timestamp: Date.now()
+      });
+    }
+
+    // Return the secret and escrow information
+    res.json({
+      success: true,
+      data: {
+        orderId: id,
+        secret: secret.encryptedSecret,
+        hashlock: secret.hashlock,
+        instructions: {
+          step1: `Call withdraw("${secret.encryptedSecret}") on destination escrow`,
+          step2: "This will reveal the secret and give you your tokens",
+          note: "Check escrow addresses on blockchain explorer"
+        }
+      },
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('Error getting order secret:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      timestamp: Date.now()
+    });
+  }
+});
 
 module.exports = router;

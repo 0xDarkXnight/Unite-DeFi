@@ -36,4 +36,4 @@ function loadContractAddresses() {
 module.exports = { loadContractAddresses };
 
 // Auto-load when this module is imported
-loadContractAddresses(); 
+loadContractAddresses();

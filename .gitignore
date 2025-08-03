@@ -78,3 +78,5 @@ gradual_commit.sh
 start_gradual_commit.sh
 gradual_commit.log
 gradual_commit.pid
+
+contracts_EVM/lib/forge-s

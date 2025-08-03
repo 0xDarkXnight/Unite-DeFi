@@ -465,14 +465,25 @@ class RelayerService {
       const escrowContract = new ethers.Contract(escrow.address, ESCROW_ABI, provider);
       
       // Verify contract state
-      const [initialized, token, amount] = await Promise.all([
-        escrowContract.initialized().catch(() => false),
-        escrowContract.token().catch(() => null),
-        escrowContract.amount().catch(() => null)
-      ]);
+      let token, amount, initialized;
+      try {
+        const [status, tokenResult, amountResult] = await Promise.all([
+          escrowContract.getStatus().catch(() => [false, false, false, 0]),
+          escrowContract.token().catch(() => null),
+          escrowContract.amount().catch(() => null)
+        ]);
 
-      if (!initialized) {
-        throw new Error('Escrow contract not properly initialized');
+        const [isInitialized, withdrawn, refunded, balance] = status;
+        initialized = isInitialized;
+        token = tokenResult;
+        amount = amountResult;
+        
+        if (!initialized) {
+          throw new Error('Escrow contract not properly initialized');
+        }
+      } catch (error) {
+        console.error(`❌ Error validating escrow ${escrow.address}:`, error);
+        throw error;
       }
 
       console.log(`✅ Escrow deployment validated: ${escrow.address} on chain ${escrow.chainId}`);
@@ -795,11 +806,15 @@ class EscrowValidator {
   }
 }
 
-// Placeholder for escrow ABI - you would import this from your contract artifacts
+// Escrow ABI - minimal functions needed
 const ESCROW_ABI = [
   "event EscrowWithdrawal(bytes32 secret)",
   "event EscrowCancelled()",
-  "function withdraw(bytes32 secret, tuple(bytes32,bytes32,address,address,address,uint256,uint256,uint256) immutables) external"
+  "event Withdrawn(address indexed to, bytes32 secret)",
+  "function getStatus() external view returns (bool initialized, bool withdrawn, bool refunded, uint256 balance)",
+  "function withdraw(bytes32 secret) external",
+  "function amount() external view returns (uint256)",
+  "function token() external view returns (address)"
 ];
 
 module.exports = RelayerService;

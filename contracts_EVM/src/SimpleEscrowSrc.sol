@@ -51,7 +51,7 @@ contract SimpleEscrowSrc {
         address _user
     ) external {
         require(!initialized, "Already initialized");
-        
+
         token = _token;
         amount = _amount;
         secretHash = _secretHash;
@@ -75,11 +75,14 @@ contract SimpleEscrowSrc {
      */
     function withdraw(bytes32 secret) external onlyInitialized onlyResolver {
         require(!withdrawn && !refunded, "Already completed");
-        require(keccak256(abi.encodePacked(secret)) == secretHash, "Invalid secret");
-        
+        require(
+            keccak256(abi.encodePacked(secret)) == secretHash,
+            "Invalid secret"
+        );
+
         withdrawn = true;
         IERC20(token).safeTransfer(resolver, amount);
-        
+
         emit Withdrawn(resolver, secret);
     }
 
@@ -89,22 +92,26 @@ contract SimpleEscrowSrc {
     function refund() external onlyInitialized onlyUser {
         require(!withdrawn && !refunded, "Already completed");
         require(block.timestamp >= timelock, "Timelock not expired");
-        
+
         refunded = true;
         IERC20(token).safeTransfer(user, amount);
-        
+
         emit Refunded(user);
     }
 
     /**
      * @notice Get escrow status
      */
-    function getStatus() external view returns (
-        bool _initialized,
-        bool _withdrawn,
-        bool _refunded,
-        uint256 _balance
-    ) {
+    function getStatus()
+        external
+        view
+        returns (
+            bool _initialized,
+            bool _withdrawn,
+            bool _refunded,
+            uint256 _balance
+        )
+    {
         return (
             initialized,
             withdrawn,

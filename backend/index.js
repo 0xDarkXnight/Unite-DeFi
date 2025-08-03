@@ -108,7 +108,7 @@ async function loadResolverConfigs() {
       owner: process.env.RESOLVER_OWNER || process.env.RESOLVER_ADDRESS,
       supportedChains: (process.env.RESOLVER_CHAINS || '11155111').split(',').map(Number),
       contractAddresses: {
-        11155111: process.env.SEPOLIA_RESOLVER || '0x8C1c1F0F562523590613fD01280EE259782d6328'
+        11155111: process.env.SEPOLIA_RESOLVER || '0xE58d34F1c02CfFFE4736E6883629a95444dD87Bc'
       },
       minProfitThreshold: process.env.MIN_PROFIT_THRESHOLD || '10',
       maxGasPrice: process.env.MAX_GAS_PRICE || '100000000000',
@@ -125,7 +125,7 @@ async function loadResolverConfigs() {
           owner: process.env.RESOLVER_ADDRESS || '0x888dc43F8aF62eafb2B542e309B836CA9683E410',
           supportedChains: [11155111],
           contractAddresses: {
-            11155111: process.env.SEPOLIA_RESOLVER || '0x8C1c1F0F562523590613fD01280EE259782d6328'
+            11155111: process.env.SEPOLIA_RESOLVER || '0xE58d34F1c02CfFFE4736E6883629a95444dD87Bc'
           },
           minProfitThreshold: process.env.MIN_PROFIT_THRESHOLD || '10',
           maxGasPrice: process.env.MAX_GAS_PRICE || '100000000000',

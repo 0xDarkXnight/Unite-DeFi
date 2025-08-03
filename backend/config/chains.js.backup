@@ -14,11 +14,10 @@ const SEPOLIA_CONFIG = {
     gasLimit: 500000,
     gasPriceMultiplier: 1.1,
     contracts: {
-      temporaryStorage: process.env.SEPOLIA_TEMPORARY_STORAGE || '0x0B6D20cbb01f9210Ace02b15624a270FCDb3B7da',
-      limitOrderProtocol: process.env.SEPOLIA_LIMIT_ORDER_PROTOCOL || '0x584c43954CfbA4C0Cb00eECE36d1dcc249ae2dfD',
-      dutchAuctionCalculator: process.env.SEPOLIA_DUTCH_AUCTION_CALCULATOR || '0xD3a6B3208Dc612A9EbE6fC64Ef6ec4Dafb082949',
-      escrowFactory: process.env.SEPOLIA_ESCROW_FACTORY || '0x2B3E10432b92dBe80B944A74116ada25bF9c02EE',
-      resolver: process.env.SEPOLIA_RESOLVER || '0xE58d34F1c02CfFFE4736E6883629a95444dD87Bc',
+      limitOrderProtocol: process.env.SEPOLIA_LIMIT_ORDER_PROTOCOL || '0x95508c5e6e02db99F17cd4c348EC6A791C189026',
+      dutchAuctionCalculator: process.env.SEPOLIA_DUTCH_AUCTION_CALCULATOR || '0x3CE7918d54FeFf0133c429C5CE1245d54e88E08e',
+      escrowFactory: process.env.SEPOLIA_ESCROW_FACTORY || '0x44CA7ff3aD7255e206ae24b0d15ACAFF5ee080E5',
+      resolver: process.env.SEPOLIA_RESOLVER || '0x8C1c1F0F562523590613fD01280EE259782d6328',
       weth: process.env.SEPOLIA_WETH || '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14' // Sepolia WETH
     },
     timeouts: {

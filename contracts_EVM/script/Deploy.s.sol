@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "forge-std/Script.sol";
+import "../src/TemporaryFundStorage.sol";
 import "../src/SimpleLimitOrderProtocol.sol";
 import "../src/SimpleDutchAuctionCalculator.sol";
 import "../src/SimpleEscrowFactory.sol";
@@ -19,9 +20,19 @@ contract Deploy is Script {
         // Start broadcasting transactions
         vm.startBroadcast(deployerPrivateKey);
 
+        // Deploy TemporaryFundStorage first
+        console.log("Deploying TemporaryFundStorage...");
+        TemporaryFundStorage temporaryStorage = new TemporaryFundStorage();
+        console.log(
+            "TemporaryFundStorage deployed at:",
+            address(temporaryStorage)
+        );
+
         // Deploy SimpleLimitOrderProtocol
         console.log("Deploying SimpleLimitOrderProtocol...");
-        SimpleLimitOrderProtocol limitOrderProtocol = new SimpleLimitOrderProtocol();
+        SimpleLimitOrderProtocol limitOrderProtocol = new SimpleLimitOrderProtocol(
+                address(temporaryStorage)
+            );
         console.log(
             "SimpleLimitOrderProtocol deployed at:",
             address(limitOrderProtocol)
@@ -48,10 +59,18 @@ contract Deploy is Script {
         );
         console.log("SimpleResolver deployed at:", address(resolver));
 
+        // Authorize the resolver to withdraw from temporary storage
+        console.log(
+            "Authorizing resolver to withdraw from temporary storage..."
+        );
+        temporaryStorage.authorizeWithdrawer(address(resolver));
+        console.log("Resolver authorized as withdrawer");
+
         vm.stopBroadcast();
 
         // Log deployment summary
         console.log("\n=== DEPLOYMENT SUCCESSFUL ===");
+        console.log("TemporaryFundStorage:", address(temporaryStorage));
         console.log("Network: Sepolia");
         console.log("Deployer:", deployer);
         console.log("SimpleLimitOrderProtocol:", address(limitOrderProtocol));

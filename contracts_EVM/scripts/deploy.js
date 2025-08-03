@@ -6,9 +6,15 @@ async function main() {
   const [deployer] = await hre.ethers.getSigners();
   console.log("Deploying contracts with account:", deployer.address);
 
-  // Deploy SimpleLimitOrderProtocol
+  // Deploy TemporaryFundStorage first
+  const TemporaryFundStorage = await hre.ethers.getContractFactory("TemporaryFundStorage");
+  const temporaryStorage = await TemporaryFundStorage.deploy();
+  await temporaryStorage.waitForDeployment();
+  console.log("TemporaryFundStorage deployed to:", await temporaryStorage.getAddress());
+
+  // Deploy SimpleLimitOrderProtocol with TemporaryFundStorage address
   const SimpleLimitOrderProtocol = await hre.ethers.getContractFactory("SimpleLimitOrderProtocol");
-  const limitOrderProtocol = await SimpleLimitOrderProtocol.deploy();
+  const limitOrderProtocol = await SimpleLimitOrderProtocol.deploy(await temporaryStorage.getAddress());
   await limitOrderProtocol.waitForDeployment();
   console.log("SimpleLimitOrderProtocol deployed to:", await limitOrderProtocol.getAddress());
 
@@ -33,8 +39,14 @@ async function main() {
   await resolver.waitForDeployment();
   console.log("SimpleResolver deployed to:", await resolver.getAddress());
 
+  // Authorize the resolver to withdraw from temporary storage
+  console.log("Authorizing resolver to withdraw from temporary storage...");
+  await temporaryStorage.authorizeWithdrawer(await resolver.getAddress());
+  console.log("Resolver authorized as withdrawer");
+
   // Save deployment addresses
-  const deploymentInfo = `SEPOLIA_LIMIT_ORDER_PROTOCOL=${await limitOrderProtocol.getAddress()}
+  const deploymentInfo = `SEPOLIA_TEMPORARY_STORAGE=${await temporaryStorage.getAddress()}
+SEPOLIA_LIMIT_ORDER_PROTOCOL=${await limitOrderProtocol.getAddress()}
 SEPOLIA_DUTCH_AUCTION_CALCULATOR=${await dutchAuctionCalculator.getAddress()}
 SEPOLIA_ESCROW_FACTORY=${await escrowFactory.getAddress()}
 SEPOLIA_RESOLVER=${await resolver.getAddress()}

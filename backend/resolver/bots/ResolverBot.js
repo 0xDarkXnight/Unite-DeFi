@@ -7,12 +7,17 @@ const { ethers } = require('ethers');
 const { supabaseManager } = require('../../database/supabase');
 const { getChainConfig } = require('../../config/chains');
 const { NATIVE_ETH_SENTINEL, ZERO_ADDRESS, GAS_CONFIG, SIGNATURE_CONFIG } = require('../../config/constants');
+const SecretMonitor = require('../services/SecretMonitor');
 
 // SimpleResolver contract ABI - minimal required functions
 const RESOLVER_ABI = [
   "function executeOrder(tuple(uint256,address,address,address,address,address,uint256,uint256,uint256,bytes) order, bytes signature, uint256 makingAmount, uint256 takingAmount) external",
+  "function deployEscrows(bytes32 orderId, address srcToken, address dstToken, uint256 srcAmount, uint256 dstAmount, bytes32 secretHash, uint256 timelock, address user) external returns (address srcEscrow, address dstEscrow)",
+  "function executeOrderWithEscrows(tuple(uint256 salt, address makerAsset, address takerAsset, address maker, address receiver, address allowedSender, uint256 makingAmount, uint256 takingAmount, uint256 offsets, bytes interactions) order, bytes signature, uint256 makingAmount, uint256 takingAmount, address srcEscrow, address dstEscrow) external",
   "function config() external view returns (uint256 minProfitBasisPoints, uint256 maxGasPrice, bool enabled)",
-  "function owner() external view returns (address)"
+  "function owner() external view returns (address)",
+  "event OrderExecuted(bytes32 indexed orderHash, address indexed maker, uint256 makingAmount, uint256 takingAmount, uint256 profit)",
+  "event EscrowDeployed(bytes32 indexed orderId, address indexed srcEscrow, address indexed dstEscrow)"
 ];
 
 // WETH contract ABI for allowance checks
@@ -42,6 +47,7 @@ class ResolverBot {
     this.providers = new Map();
     this.resolverContracts = new Map();
     this.wallet = null;
+    this.secretMonitor = null;
     
     this.activeOrders = new Set();
     
@@ -118,12 +124,32 @@ class ResolverBot {
       }
       
       // Create resolver contract instance
+      if (!chainConfig.contracts || !chainConfig.contracts.resolver) {
+        throw new Error(`Resolver contract address not found for chain ${chainId}`);
+      }
+      
+      const resolverAddress = chainConfig.contracts.resolver;
+      console.log(`📝 Using resolver contract at ${resolverAddress} for chain ${chainId}`);
+      
       const resolverContract = new ethers.Contract(
-        this.config.contractAddresses[chainId],
+        resolverAddress,
         RESOLVER_ABI,
         wallet
       );
       this.resolverContracts.set(chainId, resolverContract);
+      
+      // Verify resolver contract is accessible
+      try {
+        // Try to call a view function to verify the contract is accessible
+        resolverContract.config().then(config => {
+          const isEnabled = config.enabled;
+          console.log(`✅ Resolver contract status: ${isEnabled ? 'enabled' : 'disabled'}`);
+        }).catch(error => {
+          console.warn(`⚠️ Could not verify resolver contract status: ${error.message}`);
+        });
+      } catch (error) {
+        console.warn(`⚠️ Could not verify resolver contract status: ${error.message}`);
+      }
       
       console.log(`✅ Resolver bot initialized for ${chainConfig.name} (${chainId})`);
     }
@@ -141,6 +167,11 @@ class ResolverBot {
     
     this.isRunning = true;
     
+    // Initialize and start Secret Monitor
+    this.secretMonitor = new SecretMonitor();
+    await this.secretMonitor.initialize();
+    await this.secretMonitor.start();
+    
     // Start order monitoring
     this.startOrderMonitoring();
     
@@ -153,6 +184,12 @@ class ResolverBot {
   async stop() {
     console.log(`🛑 Stopping Resolver Bot ${this.resolverId}...`);
     this.isRunning = false;
+    
+    // Stop Secret Monitor
+    if (this.secretMonitor) {
+      await this.secretMonitor.stop();
+    }
+    
     console.log(`✅ Resolver Bot ${this.resolverId} stopped`);
   }
 
@@ -227,8 +264,21 @@ class ResolverBot {
       }
       
       // Calculate current Dutch auction price
+      console.log(`🔄 Calculating Dutch auction price for order ${orderId}...`);
       const currentPrice = this.calculateCurrentAuctionPrice(order);
-      console.log(`💰 Current auction price for ${orderId}: ${ethers.formatEther(currentPrice)} ETH`);
+      console.log(`💰 Current Dutch auction price for ${orderId}: ${ethers.formatEther(currentPrice)} ETH`);
+      
+      // Determine if the price is favorable for execution
+      const originalTakingAmount = BigInt(order.order.takingAmount);
+      const currentTakingAmount = BigInt(currentPrice);
+      
+      if (currentTakingAmount > originalTakingAmount) {
+        console.log(`⚠️ Current price (${currentTakingAmount}) is higher than original price (${originalTakingAmount}). Waiting for better price.`);
+        return;
+      }
+      
+      const savingsPercentage = ((originalTakingAmount - currentTakingAmount) * 10000n) / originalTakingAmount;
+      console.log(`💰 Dutch auction savings: ${savingsPercentage / 100n}.${savingsPercentage % 100n}%`);
       
       // Check liquidity
       const hasLiquidity = await this.checkLiquidity(order, currentPrice);
@@ -237,14 +287,53 @@ class ResolverBot {
         return;
       }
       
-      // Attempt to fill the order
-      console.log(`🚀 Attempting to fill order: ${orderId}`);
-      const result = await this.fillOrder(order, currentPrice, chainId);
+      // NEW FLOW: Deploy escrows first, then process the order
+      console.log(`🏗️ Deploying escrows for order ${orderId}...`);
+      const escrowDeployment = await this.deployEscrowsForOrder(order, currentPrice, chainId);
       
-      // If successful, mark order as filled in database
-      if (result && result.success) {
-        console.log(`✅ Order ${orderId} filled successfully, updating database...`);
-        await this.markOrderAsFilled(orderId);
+      if (escrowDeployment && escrowDeployment.success) {
+        console.log(`✅ Escrows deployed successfully for order ${orderId}`);
+        console.log(`📍 Source escrow: ${escrowDeployment.srcEscrow}`);
+        console.log(`📍 Destination escrow: ${escrowDeployment.dstEscrow}`);
+        
+        // Fund the destination escrow with resolver's tokens
+        console.log(`💰 Funding destination escrow...`);
+        const fundingResult = await this.fundDestinationEscrow(
+          escrowDeployment.dstEscrow, 
+          order, 
+          currentPrice, 
+          chainId
+        );
+        
+        if (fundingResult && fundingResult.success) {
+          console.log(`✅ Destination escrow funded successfully`);
+          
+          // Transfer user funds from temporary storage to source escrow
+          console.log(`🔄 Transferring user funds to source escrow...`);
+          const transferResult = await this.transferUserFundsToSourceEscrow(
+            order, 
+            escrowDeployment.srcEscrow, 
+            chainId
+          );
+          
+          if (transferResult && transferResult.success) {
+            console.log(`✅ User funds transferred to source escrow`);
+            console.log(`✅ Both escrows are now funded - atomic swap ready!`);
+            
+            // Update order status in database
+            await this.markOrderAsEscrowsDeployed(orderId, escrowDeployment);
+            
+            // Start monitoring the escrows for automatic secret sharing
+            console.log(`👁️ Starting escrow monitoring for order ${orderId}...`);
+            await this.secretMonitor.addOrderToMonitor({
+              orderId,
+              srcEscrow: escrowDeployment.srcEscrow,
+              dstEscrow: escrowDeployment.dstEscrow,
+              secretHash: await this.getSecretHashForOrder(orderId),
+              chainId
+            });
+          }
+        }
       }
       
     } catch (error) {
@@ -325,11 +414,15 @@ class ResolverBot {
     
     // If auction hasn't started, return start price
     if (now < startTime) {
+      console.log(`⏳ Auction hasn't started yet. Current time: ${now}, Start time: ${startTime}`);
+      console.log(`⏳ Time until start: ${startTime - now} seconds`);
       return startPrice;
     }
     
     // If auction has ended, return end price
     if (now >= endTime) {
+      console.log(`⌛ Auction has ended. Current time: ${now}, End time: ${endTime}`);
+      console.log(`⌛ Time since end: ${now - endTime} seconds`);
       return endPrice;
     }
     
@@ -338,8 +431,16 @@ class ResolverBot {
     const totalDuration = endTime - startTime;
     const priceRange = BigInt(startPrice) - BigInt(endPrice);
     const priceDecrease = (priceRange * BigInt(Math.floor(timeElapsed * 1000))) / BigInt(Math.floor(totalDuration * 1000));
+    const currentPrice = (BigInt(startPrice) - priceDecrease).toString();
     
-    return (BigInt(startPrice) - priceDecrease).toString();
+    // Calculate percentage of auction completed
+    const percentComplete = (timeElapsed / totalDuration) * 100;
+    console.log(`📉 Dutch auction in progress: ${percentComplete.toFixed(2)}% complete`);
+    console.log(`📉 Time elapsed: ${timeElapsed.toFixed(0)} seconds out of ${totalDuration.toFixed(0)} seconds`);
+    console.log(`📉 Price range: ${startPrice} → ${endPrice}`);
+    console.log(`📉 Current price: ${currentPrice} (${ethers.formatEther(currentPrice)} ETH)`);
+    
+    return currentPrice;
   }
 
   /**
@@ -383,7 +484,7 @@ class ResolverBot {
         return true;
       }
       
-      // If we got a hash, check if order is invalidated
+      // Check if order is invalidated (cancelled)
       try {
         const isInvalidated = await limitOrderContract.invalidatedOrders(orderHash);
         if (isInvalidated) {
@@ -395,18 +496,74 @@ class ResolverBot {
         // If we can't check invalidated, assume it's not invalidated
       }
       
-      // Check remaining amount
+      // Check if order is already filled
       try {
-        const remainingAmount = await limitOrderContract.remaining(orderHash);
-        console.log(`📊 Order ${order.orderId} remaining amount: ${remainingAmount.toString()}`);
+        const filledAmount = await limitOrderContract.filledAmount(orderHash);
+        console.log(`📊 Order ${order.orderId} filled amount: ${filledAmount.toString()}`);
         
-        if (remainingAmount === 0n) {
-          console.log(`❌ Order ${order.orderId} is already fully filled`);
+        // For cross-chain orders, we only process if the order is completely unfilled
+        if (filledAmount > 0n) {
+          console.log(`❌ Order ${order.orderId} is already partially or fully filled`);
           return false;
         }
-      } catch (remainingError) {
-        console.error(`❌ Error checking remaining amount:`, remainingError);
-        // If we can't check remaining, assume there is remaining amount
+      } catch (filledError) {
+        console.error(`❌ Error checking filled amount:`, filledError);
+        // If we can't check filled amount, proceed with caution
+      }
+      
+      // Check token allowances
+      try {
+        // Check if maker has approved the LOP contract to spend their tokens
+        const makerAssetContract = new ethers.Contract(
+          orderData[1], // makerAsset
+          ["function allowance(address,address) external view returns (uint256)"],
+          this.providers.get(chainId)
+        );
+        
+        // CRITICAL FIX: Check allowance for TemporaryFundStorage instead of LimitOrderProtocol
+        // because TemporaryFundStorage.depositFunds() calls safeTransferFrom(user, this, amount)
+        const makerAllowance = await makerAssetContract.allowance(
+          orderData[3], // maker
+          chainConfig.contracts.temporaryStorage
+        );
+        
+        console.log(`📊 Maker allowance: ${makerAllowance.toString()}`);
+        
+        if (makerAllowance < BigInt(orderData[6])) {
+          console.log(`❌ Order ${order.orderId} maker has insufficient allowance`);
+          console.log(`   Required: ${orderData[6]}, Available: ${makerAllowance}`);
+          return false;
+        }
+        
+        // Check if resolver has approved the LOP contract to spend their tokens
+        const takerAssetContract = new ethers.Contract(
+          orderData[2], // takerAsset
+          ["function allowance(address,address) external view returns (uint256)"],
+          this.providers.get(chainId)
+        );
+        
+        const resolverAllowance = await takerAssetContract.allowance(
+          this.wallet.address,
+          chainConfig.contracts.limitOrderProtocol
+        );
+        
+        console.log(`📊 Resolver allowance: ${resolverAllowance.toString()}`);
+        
+        if (resolverAllowance < BigInt(orderData[7])) {
+          console.log(`❌ Order ${order.orderId} resolver has insufficient allowance`);
+          console.log(`   Required: ${orderData[7]}, Available: ${resolverAllowance}`);
+          
+          // Approve tokens if needed
+          await this.approveTokens(
+            orderData[2], // takerAsset
+            chainConfig.contracts.limitOrderProtocol,
+            orderData[7], // takingAmount
+            chainId
+          );
+        }
+      } catch (allowanceError) {
+        console.error(`❌ Error checking allowances:`, allowanceError);
+        // If we can't check allowances, proceed with caution
       }
       
       return true;
@@ -415,6 +572,71 @@ class ResolverBot {
       // In case of any error, proceed with filling the order
       // The contract will revert if there's an issue
       return true;
+    }
+  }
+  
+  /**
+   * Approve tokens for spending
+   */
+  async approveTokens(tokenAddress, spender, amount, chainId) {
+    try {
+      console.log(`🔐 Checking approval for ${amount} of token ${tokenAddress} for spender ${spender}`);
+      
+      const tokenContract = new ethers.Contract(
+        tokenAddress,
+        [
+          "function approve(address spender, uint256 amount) external returns (bool)",
+          "function allowance(address owner, address spender) external view returns (uint256)",
+          "function balanceOf(address owner) external view returns (uint256)"
+        ],
+        this.wallet
+      );
+      
+      // Convert amount to BigInt
+      const requiredAmount = BigInt(amount);
+      
+      // Check current balance
+      const balance = await tokenContract.balanceOf(this.wallet.address);
+      console.log(`📊 Current token balance: ${balance.toString()}`);
+      
+      if (balance < requiredAmount) {
+        throw new Error(`Insufficient token balance. Required: ${requiredAmount}, Have: ${balance}`);
+      }
+      
+      // Check current allowance
+      const currentAllowance = await tokenContract.allowance(this.wallet.address, spender);
+      console.log(`📊 Current allowance: ${currentAllowance.toString()}`);
+      
+      // Only approve if current allowance is insufficient
+      if (currentAllowance < requiredAmount) {
+        console.log(`📊 Current allowance ${currentAllowance} is less than required ${requiredAmount}`);
+        
+        // Use the maximum possible value (type(uint256).max) for approval
+        const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935"; // 2^256 - 1
+        console.log(`🔐 Setting approval to maximum value`);
+        
+        const tx = await tokenContract.approve(spender, MAX_UINT256);
+        console.log(`📝 Approval transaction submitted: ${tx.hash}`);
+        
+        const receipt = await tx.wait();
+        console.log(`✅ Approval confirmed in block ${receipt.blockNumber}`);
+        
+        // Verify new allowance
+        const newAllowance = await tokenContract.allowance(this.wallet.address, spender);
+        console.log(`📊 New allowance: ${newAllowance.toString()}`);
+        
+        // Verify the allowance is sufficient
+        if (newAllowance < requiredAmount) {
+          throw new Error(`Failed to set sufficient allowance. Required: ${requiredAmount}, Got: ${newAllowance}`);
+        }
+      } else {
+        console.log(`✅ Current allowance ${currentAllowance} is sufficient`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`❌ Error approving tokens:`, error);
+      throw error; // Propagate error up instead of returning false
     }
   }
 
@@ -537,7 +759,7 @@ class ResolverBot {
   }
 
   /**
-   * Fill order by calling Limit Order Protocol directly
+   * Fill order using the Resolver contract with cross-chain escrows
    */
   async fillOrder(order, currentPrice, chainId) {
     console.log(`🔧 Filling order ${order.orderId} on chain ${chainId}`);
@@ -551,14 +773,20 @@ class ResolverBot {
       const orderData = this.prepareOrderData(order, currentPrice);
       const chainConfig = getChainConfig(chainId);
       
-      // Get the Limit Order Protocol contract directly
+      // Get the Resolver contract
+      const resolverContract = this.resolverContracts.get(chainId);
+      if (!resolverContract) {
+        throw new Error(`Resolver contract not found for chain ${chainId}`);
+      }
+      
+      // Get the Limit Order Protocol contract for hash calculation
       const limitOrderContract = new ethers.Contract(
         chainConfig.contracts.limitOrderProtocol,
         LOP_ABI,
-        this.wallet
+        this.providers.get(chainId)
       );
       
-      console.log('✅ Calling Limit Order Protocol directly');
+      console.log('✅ Using Resolver contract with cross-chain escrows');
       
       // Convert signature to 65-byte format
       console.log(`🔍 Original signature:`, order.signature);
@@ -586,42 +814,62 @@ class ResolverBot {
       }
       
       console.log(`📝 Final signature: ${signatureBytes}`);
-      console.log(`📝 Signature length: ${signatureBytes.length} chars`);
-      
-      // Calculate order hash - do this first to fail fast if there's an issue
+        console.log(`📝 Signature length: ${signatureBytes.length} chars`);
+        
+      // Calculate order hash - need to use EIP-712 hash like the contract does
       let orderHash;
       try {
-        orderHash = await limitOrderContract.hashOrder(orderData);
-        console.log(`📊 Order hash: ${orderHash}`);
+        // Get the inner order hash first
+        const innerOrderHash = await limitOrderContract.hashOrder(orderData);
+        console.log(`📊 Inner order hash: ${innerOrderHash}`);
+        
+        // Now create the EIP-712 typed data hash like the contract does
+        // This matches the contract's _hashTypedDataV4(hashOrder(order)) pattern
+        const domain = {
+          name: '1inch Limit Order Protocol',
+          version: '4',
+          chainId,
+          verifyingContract: chainConfig.contracts.limitOrderProtocol
+        };
+        
+        // Create the EIP-712 hash manually
+        const domainSeparator = ethers.TypedDataEncoder.hashDomain(domain);
+        orderHash = ethers.keccak256(
+          ethers.concat([
+            ethers.toUtf8Bytes('\x19\x01'),
+            domainSeparator,
+            innerOrderHash
+          ])
+        );
+        
+        console.log(`📊 EIP-712 order hash: ${orderHash}`);
+        
+        // Verify signature against the calculated EIP-712 hash
+        console.log(`🔍 Verifying signature against hash: ${orderHash}`);
+        try {
+          // Use ethers.recoverAddress with the EIP-712 hash
+          // This is the correct way to verify EIP-712 signatures
+          const signerAddress = ethers.recoverAddress(orderHash, signatureBytes);
+          console.log(`✅ Signature verification result: ${signerAddress}`);
+          
+          // Compare signer address with maker address
+          if (signerAddress.toLowerCase() !== orderData[3].toLowerCase()) {
+            console.warn(`⚠️ WARNING: Signature was signed by ${signerAddress}, but maker is ${orderData[3]}`);
+            console.warn(`⚠️ This order will likely fail with 'Invalid signature' error`);
+          }
+        } catch (verifyError) {
+          console.warn(`⚠️ WARNING: Could not verify signature: ${verifyError.message}`);
+          console.warn(`⚠️ This order will likely fail with 'Invalid signature' error`);
+        }
       } catch (hashError) {
         console.error(`❌ Error getting order hash:`, hashError);
         throw new Error(`Failed to get order hash: ${hashError.message}`);
       }
       
-      // Skip signature verification if it might fail
-      // The contract will verify the signature anyway
-      
-      // Check remaining amount if possible
-      let remainingAmount;
-      try {
-        remainingAmount = await limitOrderContract.remaining(orderHash);
-        console.log(`📊 Remaining amount for order: ${remainingAmount.toString()}`);
-        
-        // Skip if no remaining amount
-        if (remainingAmount === 0n) {
-          console.log(`❌ Order has no remaining amount, skipping fill`);
-          return { success: false, reason: 'Order already filled' };
-        }
-      } catch (remainingError) {
-        console.error(`❌ Error checking remaining amount:`, remainingError);
-        // If we can't check remaining, proceed with full amount
-        remainingAmount = orderData[6];
-      }
-      
-      // Use the minimum of desired amount and remaining amount
-      const actualMakingAmount = remainingAmount < orderData[6] ? remainingAmount : orderData[6];
-      const actualTakingAmount = actualMakingAmount === remainingAmount ? 
-        (BigInt(orderData[7]) * remainingAmount) / orderData[6] : orderData[7];
+      // For cross-chain orders, we need to use the full order amount
+      // No partial fills - we're going to complete the transaction in one go
+      const makingAmount = orderData[6];
+      const takingAmount = orderData[7];
       
       console.log(`📄 Order data for contract:`, {
         salt: orderData[0].toString(),
@@ -630,62 +878,282 @@ class ResolverBot {
         maker: orderData[3],
         receiver: orderData[4],
         allowedSender: orderData[5],
-        makingAmount: actualMakingAmount.toString(),
-        takingAmount: actualTakingAmount.toString(),
+        makingAmount: makingAmount.toString(),
+        takingAmount: takingAmount.toString(),
         offsets: orderData[8].toString(),
         interactions: orderData[9]
       });
       
+      // Make sure we have sufficient token allowances
+      console.log(`🔄 Checking token approvals...`);
+      
+      try {
+        // Check both approvals in sequence
+        await this.approveTokens(
+          orderData[2], // takerAsset
+          chainConfig.contracts.resolver,
+          takingAmount.toString(),
+          chainId
+        );
+        
+        await this.approveTokens(
+          orderData[2], // takerAsset
+          chainConfig.contracts.limitOrderProtocol,
+          takingAmount.toString(),
+          chainId
+        );
+      } catch (approvalError) {
+        console.error(`❌ Error during token approval:`, approvalError.message);
+        throw new Error(`Failed to approve tokens: ${approvalError.message}`);
+      }
+      
+      // STEP 1: Fill the order through the Resolver contract
+      console.log(`🚀 Step 1: Executing order through Resolver`);
+      
+      // Double-check allowances before proceeding
+      console.log(`🔍 Verifying token allowances before execution...`);
+      
+      // Check if resolver is enabled
+      try {
+        const resolverConfig = await resolverContract.config();
+        console.log(`📊 Resolver config:`, {
+          minProfitBasisPoints: resolverConfig.minProfitBasisPoints.toString(),
+          maxGasPrice: resolverConfig.maxGasPrice.toString(),
+          enabled: resolverConfig.enabled
+        });
+        
+        if (!resolverConfig.enabled) {
+          console.log(`⚠️ Resolver is disabled! Will fall back to direct LOP call.`);
+        }
+      } catch (configError) {
+        console.error(`❌ Error checking resolver config:`, configError.message);
+      }
+      
+      // Check all relevant allowances and balances
+      const takerAssetContract = new ethers.Contract(
+        orderData[2], // takerAsset
+        ["function allowance(address,address) external view returns (uint256)", "function balanceOf(address) external view returns (uint256)"],
+        this.providers.get(chainId)
+      );
+      
+      const makerAssetContract = new ethers.Contract(
+        orderData[1], // makerAsset
+        ["function allowance(address,address) external view returns (uint256)", "function balanceOf(address) external view returns (uint256)"],
+        this.providers.get(chainId)
+      );
+      
+      // CRITICAL FIX: Check if the maker has approved the TemporaryFundStorage
+      // because the new flow deposits to TemporaryFundStorage, not LimitOrderProtocol
+      const makerLOPAllowance = await makerAssetContract.allowance(
+        orderData[3], // maker
+        chainConfig.contracts.temporaryStorage
+      );
+      
+      // Check if the bot has approved the LimitOrderProtocol directly
+      const botLOPAllowance = await takerAssetContract.allowance(
+        this.wallet.address,
+        chainConfig.contracts.limitOrderProtocol
+      );
+      
+      // Check if the bot has approved the Resolver
+      const botResolverAllowance = await takerAssetContract.allowance(
+        this.wallet.address, 
+        chainConfig.contracts.resolver
+      );
+      
+      const botBalance = await takerAssetContract.balanceOf(this.wallet.address);
+      const makerBalance = await makerAssetContract.balanceOf(orderData[3]);
+      
+      console.log(`📊 Bot balance of taker asset: ${botBalance.toString()}`);
+      console.log(`📊 Maker balance of maker asset: ${makerBalance.toString()}`);
+      console.log(`📊 Maker allowance to LOP: ${makerLOPAllowance.toString()}`);
+      console.log(`📊 Bot allowance to LOP: ${botLOPAllowance.toString()}`);
+      console.log(`📊 Bot allowance to Resolver: ${botResolverAllowance.toString()}`);
+      console.log(`📊 Required taking amount: ${takingAmount.toString()}`);
+      console.log(`📊 Required making amount: ${makingAmount.toString()}`);
+      
+      // Check if maker has sufficient allowance for TemporaryFundStorage
+      if (makerLOPAllowance < BigInt(makingAmount)) {
+        console.log(`⚠️ Maker has insufficient allowance for TemporaryFundStorage: ${makerLOPAllowance} < ${makingAmount}`);
+        console.log(`⚠️ This order will likely fail because the maker hasn't approved TemporaryFundStorage.`);
+        console.log(`⚠️ Maker needs to approve TemporaryFundStorage (${chainConfig.contracts.temporaryStorage}) to spend tokens.`);
+        console.log(`⚠️ Attempting to continue anyway, but transaction will likely fail.`);
+        // We'll continue and let the transaction fail naturally instead of throwing an error
+        // This allows testing with smaller amounts that might work
+      }
+      
+      // Check if we already have sufficient allowances
+      if (botResolverAllowance >= BigInt(takingAmount) && botLOPAllowance >= BigInt(takingAmount)) {
+        console.log(`✅ Existing allowances are sufficient, skipping approval`);
+      } else {
+        console.log(`🔄 Setting up token approvals with maximum values...`);
+        
+        // Only approve if current allowance is insufficient
+        if (botResolverAllowance < BigInt(takingAmount)) {
+          await this.approveTokens(
+            orderData[2],
+            chainConfig.contracts.resolver,
+            takingAmount,
+            chainId
+          );
+        }
+        
+        if (botLOPAllowance < BigInt(takingAmount)) {
+          await this.approveTokens(
+            orderData[2],
+            chainConfig.contracts.limitOrderProtocol,
+            takingAmount,
+            chainId
+          );
+        }
+      }
+      
+      // Double-check allowances after re-approval
+      const updatedResolverAllowance = await takerAssetContract.allowance(
+        this.wallet.address, 
+        chainConfig.contracts.resolver
+      );
+      
+      const updatedLOPAllowance = await takerAssetContract.allowance(
+        this.wallet.address,
+        chainConfig.contracts.limitOrderProtocol
+      );
+      
+      console.log(`📊 Updated Resolver allowance: ${updatedResolverAllowance.toString()}`);
+      console.log(`📊 Updated LOP allowance: ${updatedLOPAllowance.toString()}`);
+      
+      if (updatedResolverAllowance < BigInt(takingAmount) || updatedLOPAllowance < BigInt(takingAmount)) {
+        throw new Error(`Failed to set sufficient allowances after multiple attempts`);
+      }
+      
       let tx;
       
-      // Estimate gas with fallback
+              // NEW PROPER FLOW: Use Resolver contract with integrated escrow management
+        console.log(`🔧 Using Resolver contract for proper escrow-based atomic swap flow`);
+        
+        // Use the existing Resolver contract but connect it to the wallet for execution
+        const escrowResolverContract = resolverContract.connect(this.wallet);
+      
+      // STEP 1: Deploy escrows first
+      console.log(`🚀 Step 1: Deploying escrows via Resolver contract`);
+      
+      // Generate secret and secret hash for atomic swap
+      const secret = ethers.randomBytes(32);
+      const secretHash = ethers.keccak256(secret);
+      const timelock = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      
+      console.log(`🔑 Generated secret: ${ethers.hexlify(secret)}`);
+      console.log(`🔑 Secret hash: ${secretHash}`);
+      
+      // Deploy escrow contracts via Resolver
+      const orderId = ethers.randomBytes(32);
+      console.log(`📝 Deploying escrows for order ID: ${ethers.hexlify(orderId)}`);
+      
+      const deployTx = await escrowResolverContract.deployEscrows(
+        orderId,
+        orderData[1], // srcToken (makerAsset)
+        orderData[2], // dstToken (takerAsset)  
+        makingAmount, // srcAmount
+        takingAmount, // dstAmount
+        secretHash,
+        timelock,
+        orderData[3] // user
+      );
+      
+      console.log(`📝 Escrow deployment transaction: ${deployTx.hash}`);
+      const deployReceipt = await deployTx.wait();
+      console.log(`✅ Escrows deployed! Hash: ${deployReceipt.hash}`);
+      
+      // Parse EscrowDeployed event
+      const eventSignature = ethers.id("EscrowDeployed(bytes32,address,address)");
+      const escrowDeployedEvent = deployReceipt.logs.find(log => 
+        log.topics[0] === eventSignature
+      );
+      
+      if (!escrowDeployedEvent) {
+        throw new Error('EscrowDeployed event not found in transaction logs');
+      }
+      
+      // Parse the event manually
+      const srcEscrow = ethers.getAddress('0x' + escrowDeployedEvent.topics[2].slice(26));
+      const dstEscrow = ethers.getAddress('0x' + escrowDeployedEvent.topics[3].slice(26));
+      
+      console.log(`📝 Source escrow: ${srcEscrow}`);
+      console.log(`📝 Destination escrow: ${dstEscrow}`);
+      
+      // STEP 2: Execute order with escrows
+      console.log(`🚀 Step 2: Executing order with escrows via Resolver contract`);
+      
       try {
-        const gasEstimate = await limitOrderContract.fillOrder.estimateGas(
-          orderData,
+        const executeTx = await escrowResolverContract.executeOrderWithEscrows(
+          {
+            salt: orderData[0],
+            makerAsset: orderData[1],
+            takerAsset: orderData[2],
+            maker: orderData[3],
+            receiver: orderData[4],
+            allowedSender: orderData[5],
+            makingAmount: orderData[6],
+            takingAmount: orderData[7],
+            offsets: orderData[8],
+            interactions: orderData[9]
+          },
           signatureBytes,
-          actualMakingAmount,
-          actualTakingAmount
+          makingAmount,
+          takingAmount,
+          srcEscrow,
+          dstEscrow
         );
         
-        console.log(`⛽ Gas estimate: ${gasEstimate.toString()}`);
+        console.log(`📝 Order execution transaction: ${executeTx.hash}`);
+        const executeReceipt = await executeTx.wait();
+        console.log(`✅ Order executed with escrows! Hash: ${executeReceipt.hash}`);
         
-        // Execute the order directly
-        tx = await limitOrderContract.fillOrder(
-          orderData,
-          signatureBytes,
-          actualMakingAmount,
-          actualTakingAmount,
-          { gasLimit: gasEstimate * BigInt(100 + GAS_CONFIG.BUFFER_PERCENTAGE) / 100n }
-        );
-      } catch (gasError) {
-        console.error(`❌ Gas estimation failed:`, gasError);
-        console.log(`⚠️ Trying with fixed gas limit...`);
+        tx = executeReceipt;
         
-        // Use a fixed gas limit as fallback
-        const fixedGasLimit = BigInt(500000); // 500k gas
+        // STEP 3: Store secret and notify user
+        console.log(`🚀 Step 3: Order executed and escrows set up - Now user must deposit and reveal secret`);
+        console.log(`🔑 Secret (for user): ${ethers.hexlify(secret)}`);
+        console.log(`📍 Source escrow (user must deposit WETH): ${srcEscrow}`);
+        console.log(`📍 Destination escrow (user gets USDC): ${dstEscrow}`);
+        console.log(`💡 User flow:`);
+        console.log(`   1. User calls deposit() on source escrow ${srcEscrow} to deposit ${ethers.formatEther(makingAmount)} WETH`);
+        console.log(`   2. User calls withdraw("${ethers.hexlify(secret)}") on destination escrow to get USDC`);
+        console.log(`   3. Resolver automatically completes swap using revealed secret`);
         
-        tx = await limitOrderContract.fillOrder(
-          orderData,
-          signatureBytes,
-          actualMakingAmount,
-          actualTakingAmount,
-          { gasLimit: fixedGasLimit }
-        );
+        // Store the secret for the user to access via API
+        await this.storeSecretForUser(order.orderId, ethers.hexlify(secret), {
+          srcEscrow,
+          dstEscrow,
+          secretHash: secretHash,
+          makingAmount: makingAmount.toString(),
+          takingAmount: takingAmount.toString()
+        });
+        
+        // Add order to secret monitoring
+        if (this.secretMonitor) {
+          await this.secretMonitor.addOrderToMonitor({
+            orderId: order.orderId,
+            srcEscrow,
+            dstEscrow,
+            secretHash: secretHash,
+            chainId: chainId
+          });
+        }
+        
+        return {
+          success: true,
+          transactionHash: executeReceipt.hash,
+          gasUsed: executeReceipt.gasUsed.toString(),
+          srcEscrow,
+          dstEscrow,
+          status: 'awaiting_user_deposit',
+          message: 'Escrows deployed and resolver funded destination escrow. User must deposit to source escrow.'
+        };
+      } catch (escrowError) {
+        console.error(`❌ Error in escrow-based order execution:`, escrowError);
+        throw new Error(`Escrow-based order execution failed: ${escrowError.message}`);
       }
-      
-      if (!tx) {
-        throw new Error('Transaction failed to execute');
-      }
-      
-      console.log(`📝 Transaction submitted: ${tx.hash}`);
-      const receipt = await tx.wait();
-      console.log(`✅ Order filled successfully! Hash: ${receipt.hash}`);
-      
-      return {
-        success: true,
-        transactionHash: receipt.hash,
-        gasUsed: receipt.gasUsed.toString()
-      };
       
     } catch (error) {
       console.error(`❌ Error filling order: ${error.message}`);
@@ -714,24 +1182,24 @@ class ResolverBot {
   async checkWETHAllowances(order, chainId) {
     const chainConfig = getChainConfig(chainId);
     const wethAddress = chainConfig.contracts.weth;
-    const limitOrderProtocol = chainConfig.contracts.limitOrderProtocol;
+    const temporaryStorage = chainConfig.contracts.temporaryStorage;
     
     const wethContract = new ethers.Contract(wethAddress, WETH_ABI, this.providers.get(chainId));
     
-    // Check maker's allowance
-    const makerAllowance = await wethContract.allowance(order.order.maker, limitOrderProtocol);
-    console.log(`🔍 Maker WETH allowance: ${ethers.formatEther(makerAllowance)} WETH`);
+    // CRITICAL FIX: Check maker's allowance for TemporaryFundStorage, not LimitOrderProtocol
+    const makerAllowance = await wethContract.allowance(order.order.maker, temporaryStorage);
+    console.log(`🔍 Maker WETH allowance for TemporaryFundStorage: ${ethers.formatEther(makerAllowance)} WETH`);
     
     if (makerAllowance < ethers.parseEther('0.1')) {
-      throw new Error('Insufficient WETH allowance for maker');
+      throw new Error('Insufficient WETH allowance for maker to TemporaryFundStorage');
     }
     
-    // Check resolver's allowance
-    const resolverAllowance = await wethContract.allowance(this.wallet.address, limitOrderProtocol);
-    console.log(`🔍 Resolver WETH allowance: ${ethers.formatEther(resolverAllowance)} WETH`);
+    // Check resolver's allowance for LimitOrderProtocol (resolver still uses LOP for taker tokens)
+    const resolverAllowance = await wethContract.allowance(this.wallet.address, chainConfig.contracts.limitOrderProtocol);
+    console.log(`🔍 Resolver WETH allowance for LimitOrderProtocol: ${ethers.formatEther(resolverAllowance)} WETH`);
     
     if (resolverAllowance < ethers.parseEther('0.1')) {
-      throw new Error('Insufficient WETH allowance for resolver');
+      throw new Error('Insufficient WETH allowance for resolver to LimitOrderProtocol');
     }
   }
 
@@ -783,6 +1251,345 @@ class ResolverBot {
     ];
     
     return orderArray;
+  }
+
+  /**
+   * Store secret for user to complete atomic swap
+   */
+  async storeSecretForUser(orderId, secret, escrowData) {
+    try {
+      // Update order status
+      await supabaseManager.updateOrder(orderId, {
+        status: 'awaiting_user_action'
+      });
+      
+      // Store secret in secrets table
+      const order = await supabaseManager.getOrder(orderId);
+      await supabaseManager.createSecret({
+        orderId: orderId,
+        userAddress: order.order.maker,
+        encryptedSecret: secret, // In production, encrypt this
+        hashlock: escrowData.secretHash,
+        status: 'pending'
+      });
+      
+      console.log(`📁 Secret stored for order ${orderId} - user can access via API`);
+      
+      // TODO: In production, also notify user via webhook or push notification
+      // await this.notifyUser(orderId, escrowData);
+      
+    } catch (error) {
+      console.error(`❌ Error storing secret for user:`, error);
+      throw error;
+    }
+  }
+  /**
+   * Deploy escrows for an order (new flow)
+   * @param {object} order - Order data
+   * @param {bigint} currentPrice - Current auction price
+   * @param {number} chainId - Chain ID
+   * @returns {object} Deployment result with escrow addresses
+   */
+  async deployEscrowsForOrder(order, currentPrice, chainId) {
+    try {
+      const chainConfig = getChainConfig(chainId);
+      const provider = this.providers.get(chainId);
+      const wallet = new ethers.Wallet(this.config.privateKey, provider);
+
+      // Connect to resolver contract
+      const resolverContract = new ethers.Contract(
+        chainConfig.contracts.resolver,
+        [
+          "function deployEscrows(bytes32 orderId, address srcToken, address dstToken, uint256 srcAmount, uint256 dstAmount, bytes32 secretHash, uint256 timelock, address user) external returns (address srcEscrow, address dstEscrow)"
+        ],
+        wallet
+      );
+
+      // Use the order hash from the database (already calculated correctly)
+      const orderHash = order.orderHash;
+
+      // Get secret hash from database
+      const secretData = await supabaseManager.getSecret(order.orderId);
+      if (!secretData || !secretData.hashlock) {
+        throw new Error(`No secret found for order ${order.orderId}`);
+      }
+
+      // Set timelock to 24 hours from now
+      const timelock = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
+
+      console.log(`🔧 Deploying escrows with parameters:`);
+      console.log(`   Order ID: ${orderHash}`);
+      console.log(`   Source token: ${order.order.makerAsset}`);
+      console.log(`   Destination token: ${order.order.takerAsset}`);
+      console.log(`   Source amount: ${order.order.makingAmount}`);
+      console.log(`   Destination amount: ${currentPrice.toString()}`);
+      console.log(`   Secret hash: ${secretData.hashlock}`);
+      console.log(`   Timelock: ${timelock}`);
+      console.log(`   User: ${order.order.maker}`);
+
+      // Deploy escrows
+      const deployTx = await resolverContract.deployEscrows(
+        orderHash,
+        order.order.makerAsset,
+        order.order.takerAsset,
+        order.order.makingAmount,
+        currentPrice.toString(),
+        secretData.hashlock,
+        timelock,
+        order.order.maker
+      );
+
+      console.log(`📝 Escrow deployment transaction: ${deployTx.hash}`);
+      const deployReceipt = await deployTx.wait();
+      
+      // Parse the deployment event to get escrow addresses
+      console.log(`🔍 Parsing ${deployReceipt.logs.length} logs from deployment transaction...`);
+      
+      const escrowDeployedEvent = deployReceipt.logs.find((log, index) => {
+        console.log(`📋 Log ${index}: Address: ${log.address}, Topics[0]: ${log.topics[0]}`);
+        
+        // Check if this is from our resolver contract and has the EscrowDeployed event signature
+        if (log.address.toLowerCase() === chainConfig.contracts.resolver.toLowerCase() && 
+            log.topics[0] === '0xa1245e1edc7ca4a2c5379f2483084e765c47dfd642751551d236a7776e33eb6e') {
+          console.log(`✅ Found EscrowDeployed event at log index ${index}`);
+          console.log(`   Topics:`, log.topics);
+          return true;
+        }
+        
+        // Also try parsing with interface as backup
+        try {
+          const parsed = resolverContract.interface.parseLog(log);
+          if (parsed && parsed.name === 'EscrowDeployed') {
+            console.log(`✅ Found EscrowDeployed event via interface at log index ${index}`);
+            console.log(`   Args:`, parsed.args);
+            return true;
+          }
+          return false;
+        } catch (e) {
+          console.log(`📋 Log ${index}: Could not parse (${e.message})`);
+          return false;
+        }
+      });
+
+      if (!escrowDeployedEvent) {
+        console.error(`❌ EscrowDeployed event not found in ${deployReceipt.logs.length} logs`);
+        console.log(`📝 All logs:`, deployReceipt.logs.map((log, i) => ({
+          index: i,
+          address: log.address,
+          topics: log.topics,
+          data: log.data
+        })));
+        throw new Error('EscrowDeployed event not found in transaction receipt');
+      }
+
+      // Extract escrow addresses from the event
+      let srcEscrow, dstEscrow;
+      
+      try {
+        // Try to parse with interface first
+        const parsedEvent = resolverContract.interface.parseLog(escrowDeployedEvent);
+        srcEscrow = parsedEvent.args[1];
+        dstEscrow = parsedEvent.args[2];
+      } catch (e) {
+        // If interface parsing fails, extract from topics directly
+        // topics[0] = event signature
+        // topics[1] = orderId (indexed)  
+        // topics[2] = srcEscrow (indexed)
+        // topics[3] = dstEscrow (indexed)
+        srcEscrow = ethers.getAddress('0x' + escrowDeployedEvent.topics[2].slice(26));
+        dstEscrow = ethers.getAddress('0x' + escrowDeployedEvent.topics[3].slice(26));
+      }
+
+      console.log(`✅ Escrows deployed successfully!`);
+      console.log(`   Source escrow: ${srcEscrow}`);
+      console.log(`   Destination escrow: ${dstEscrow}`);
+
+      return {
+        success: true,
+        srcEscrow,
+        dstEscrow,
+        txHash: deployReceipt.hash,
+        orderHash
+      };
+
+    } catch (error) {
+      console.error(`❌ Error deploying escrows for order ${order.orderId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Fund the destination escrow with resolver's tokens
+   * @param {string} dstEscrow - Destination escrow address
+   * @param {object} order - Order data
+   * @param {bigint} amount - Amount to fund
+   * @param {number} chainId - Chain ID
+   */
+  async fundDestinationEscrow(dstEscrow, order, amount, chainId) {
+    try {
+      const chainConfig = getChainConfig(chainId);
+      const provider = this.providers.get(chainId);
+      const wallet = new ethers.Wallet(this.config.privateKey, provider);
+
+      // Connect to resolver contract (not escrow directly)
+      const resolverContract = new ethers.Contract(
+        chainConfig.contracts.resolver,
+        [
+          "function fundDestinationEscrow(address dstEscrow, address token, uint256 amount) external",
+          "function approveToken(address token, address spender, uint256 amount) external"
+        ],
+        wallet
+      );
+
+      // First approve resolver to spend our tokens
+      const tokenContract = new ethers.Contract(
+        order.order.takerAsset,
+        [
+          "function approve(address spender, uint256 amount) external returns (bool)",
+          "function balanceOf(address account) external view returns (uint256)"
+        ],
+        wallet
+      );
+
+      console.log(`💰 Approving resolver to spend ${amount.toString()} tokens...`);
+      const approveTx = await tokenContract.approve(chainConfig.contracts.resolver, amount.toString());
+      await approveTx.wait();
+
+      console.log(`💰 Calling resolver to fund destination escrow...`);
+      const fundTx = await resolverContract.fundDestinationEscrow(
+        dstEscrow,
+        order.order.takerAsset,
+        amount.toString()
+      );
+      const fundReceipt = await fundTx.wait();
+
+      console.log(`✅ Destination escrow funded successfully! Hash: ${fundReceipt.hash}`);
+      
+      return {
+        success: true,
+        txHash: fundReceipt.hash
+      };
+
+    } catch (error) {
+      console.error(`❌ Error funding destination escrow:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Transfer user funds from temporary storage to source escrow
+   * @param {object} order - Order data
+   * @param {string} srcEscrow - Source escrow address
+   * @param {number} chainId - Chain ID
+   */
+  async transferUserFundsToSourceEscrow(order, srcEscrow, chainId) {
+    try {
+      const chainConfig = getChainConfig(chainId);
+      const provider = this.providers.get(chainId);
+      const wallet = new ethers.Wallet(this.config.privateKey, provider);
+
+      // Use the order hash from the database (already calculated correctly)
+      const orderHash = order.orderHash;
+
+      // First check if funds are available in temporary storage
+      const tempStorageContract = new ethers.Contract(
+        chainConfig.contracts.temporaryStorage,
+        [
+          "function hasFunds(bytes32 orderId) external view returns (bool)"
+        ],
+        wallet
+      );
+
+      const hasFunds = await tempStorageContract.hasFunds(orderHash);
+      if (!hasFunds) {
+        throw new Error(`No funds available in temporary storage for order ${order.orderId}`);
+      }
+
+      // CRITICAL FIX: Call SimpleResolver to withdraw funds (it's authorized)
+      // instead of calling TemporaryFundStorage directly (ResolverBot is not authorized)
+      const resolverContract = new ethers.Contract(
+        chainConfig.contracts.resolver,
+        [
+          "function withdrawFromTemporaryStorage(address temporaryStorage, bytes32 orderHash, address destination) external"
+        ],
+        wallet
+      );
+
+      console.log(`🔄 Transferring user funds via SimpleResolver from temporary storage to source escrow...`);
+      const transferTx = await resolverContract.withdrawFromTemporaryStorage(
+        chainConfig.contracts.temporaryStorage,
+        orderHash,
+        srcEscrow
+      );
+      const transferReceipt = await transferTx.wait();
+
+      console.log(`✅ User funds transferred successfully to source escrow! Hash: ${transferReceipt.hash}`);
+
+      return {
+        success: true,
+        txHash: transferReceipt.hash
+      };
+
+    } catch (error) {
+      console.error(`❌ Error transferring user funds to source escrow:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Mark an order as having escrows deployed
+   * @param {string} orderId - Order ID
+   * @param {object} escrowDeployment - Escrow deployment data
+   */
+  async markOrderAsEscrowsDeployed(orderId, escrowDeployment) {
+    try {
+      // Update order status
+      await supabaseManager.updateOrder(orderId, {
+        status: 'escrows_deployed',
+        updated_at: new Date().toISOString()
+      });
+
+      // Create escrow records
+      await supabaseManager.createEscrow({
+        orderId,
+        type: 'src',
+        address: escrowDeployment.srcEscrow,
+        chainId: 11155111, // TODO: get from order
+        status: 'deployed',
+        transactionHash: escrowDeployment.txHash
+      });
+
+      await supabaseManager.createEscrow({
+        orderId,
+        type: 'dst',
+        address: escrowDeployment.dstEscrow,
+        chainId: 11155111, // TODO: get from order
+        status: 'deployed',
+        transactionHash: escrowDeployment.txHash
+      });
+
+      console.log(`✅ Order ${orderId} marked as having escrows deployed`);
+    } catch (error) {
+      console.error(`❌ Error marking order ${orderId} as escrows deployed:`, error);
+    }
+  }
+
+  /**
+   * Get the secret hash for an order
+   * @param {string} orderId - Order ID
+   * @returns {string} Secret hash
+   */
+  async getSecretHashForOrder(orderId) {
+    try {
+      const secretData = await supabaseManager.getSecret(orderId);
+      if (!secretData || !secretData.hashlock) {
+        throw new Error(`No secret found for order ${orderId}`);
+      }
+      return secretData.hashlock;
+    } catch (error) {
+      console.error(`❌ Error getting secret hash for order ${orderId}:`, error);
+      throw error;
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
+import "../src/TemporaryFundStorage.sol";
 import "../src/SimpleLimitOrderProtocol.sol";
 import "../src/SimpleResolver.sol";
 import "../src/SimpleEscrowFactory.sol";
@@ -44,7 +45,8 @@ contract OrderDebugTest is Test {
         testSigner = vm.addr(testPrivateKey);
 
         // Deploy contracts
-        limitOrderProtocol = new SimpleLimitOrderProtocol();
+        address tempStorage = address(new TemporaryFundStorage());
+        limitOrderProtocol = new SimpleLimitOrderProtocol(tempStorage);
         escrowFactory = new SimpleEscrowFactory();
         resolver = new SimpleResolver(
             address(limitOrderProtocol),

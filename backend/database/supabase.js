@@ -405,6 +405,42 @@ class SupabaseManager {
   }
 
   /**
+   * Escrows operations
+   */
+  async createEscrow(escrowData) {
+    if (this.mockMode) {
+      const id = `escrow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const escrow = {
+        ...escrowData,
+        id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      if (!this.mockData.escrows) {
+        this.mockData.escrows = new Map();
+      }
+      this.mockData.escrows.set(id, escrow);
+      return escrow;
+    }
+
+    const { data, error } = await this.client
+      .from('escrows')
+      .insert({
+        order_id: escrowData.orderId,
+        type: escrowData.type,
+        chain_id: escrowData.chainId,
+        address: escrowData.address,
+        status: escrowData.status,
+        transaction_hash: escrowData.transactionHash
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  /**
    * Get escrows with filters
    */
   async getEscrows(filters = {}, pagination = {}) {
