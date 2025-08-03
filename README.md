@@ -1,93 +1,215 @@
 <div align="center">
-    <img src="https://github.com/1inch/limit-order-protocol/blob/master/.github/1inch_github_w.svg#gh-light-mode-only">
-    <img src="https://github.com/1inch/limit-order-protocol/blob/master/.github/1inch_github_b.svg#gh-dark-mode-only">
+    <h1>🚀 Unite DeFi</h1>
+    <p><strong>Cross-Chain Dutch Auction Protocol with Limit Orders</strong></p>
+    <p>Building the future of decentralized cross-chain trading</p>
 </div>
 
-# 1inch Limit Order Protocol Smart Contract
+<div align="center">
+    <img src="https://img.shields.io/badge/Status-Testing%20Phase-orange" alt="Testing Phase">
+    <img src="https://img.shields.io/badge/Chain-Sepolia%20Testnet-blue" alt="Sepolia Testnet">
+    <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
+</div>
 
-[![Build Status](https://github.com/1inch/limit-order-protocol/workflows/CI/badge.svg)](https://github.com/1inch/limit-order-protocol/actions)
-[![Coverage Status](https://codecov.io/gh/1inch/limit-order-protocol/branch/master/graph/badge.svg?token=FSFTJPS41S)](https://codecov.io/gh/1inch/limit-order-protocol)
+---
 
-### Version warning
+## 📋 Project Overview
 
-The `master` branch contains the latest work-in-progress version of limit orders. It hasn't been audited and may contain severe security issues or may not work at all.
+**Unite DeFi** is an innovative cross-chain Dutch auction protocol that combines the efficiency of limit orders with the dynamic pricing of Dutch auctions. This project enables seamless trading across multiple blockchain networks with atomic swaps and advanced order management.
 
-Please, use the commit tagged version to get the latest production version that has passed through a series of security audits:
+### 🎯 Current Status
+**⚠️ This is a testing phase implementation for Sepolia testnet only.**
+- This is one of the iterations and not the final codebase
+- Currently testing on Sepolia chain, not the full cross-chain protocol
+- All features are in development and testing phase
+- Not production-ready
 
-- tag `4.3.2` [Fee Flow in Limit order protocol v4](https://github.com/1inch/limit-order-protocol/tree/4.3.2) / [secure audits](https://github.com/1inch/1inch-audits/tree/master/Fees%20for%20LO%20and%20Fusion%20V1)
-- tag `4.0.0` [Limit order protocol v4](https://github.com/1inch/limit-order-protocol/tree/4.0.0) / [security audits](https://github.com/1inch/1inch-audits/tree/master/Aggregation%20Pr.%20V6%20and%20Limit%20Order%20Pr.V4)
-- tag `3.0.1` [Limit order protocol v3](https://github.com/1inch/limit-order-protocol/tree/3.0.1) / [security audits](https://github.com/1inch/1inch-audits/tree/master/Aggregation%20Pr.%20V5%20and%20Limit%20Order%20Pr.V3)
-- tag `v2` - [Limit order protocol v2](https://github.com/1inch/limit-order-protocol/tree/v2) / [security audits](https://github.com/1inch/1inch-audits/tree/master/Limit%20Order%20Protocol%20V2)
+---
 
-### About
+## 🏗️ Architecture
 
-You can find the latest general overview and documentation on the 1inch limit orders protocol in the [description.md](description.md). Documentation for this and previous versions can be found on the [1inch documentation portal](https://docs.1inch.io/docs/limit-order-protocol/introduction/).
+### Smart Contracts (`contracts_EVM/`)
+- **`SimpleLimitOrderProtocol.sol`** - Core limit order functionality
+- **`SimpleDutchAuctionCalculator.sol`** - Dynamic pricing calculations
+- **`SimpleEscrowFactory.sol`** - Cross-chain escrow management
+- **`SimpleEscrowSrc.sol`** - Source chain escrow contracts
+- **`SimpleEscrowDst.sol`** - Destination chain escrow contracts
+- **`SimpleResolver.sol`** - Order resolution and execution
 
-The repository contains smart contracts for EVM-based blockchains (such as Ethereum, Binance Smart Chain, etc.). These contracts are a core part of the 1inch limit order protocol, allowing users to create limit orders off-chain that can be filled on-chain. A limit order is a data structure signed according to EIP-712.
+### Backend (`backend/`)
+- **API Server** - RESTful API for order management
+- **Relayer Service** - Cross-chain transaction relaying
+- **Resolver Bot** - Automated order execution
+- **Database** - Order tracking and state management
 
-### Limit Order
+### Frontend (`frontend/`)
+- **Next.js Application** - Modern React-based UI
+- **Wallet Integration** - RainbowKit + Wagmi
+- **Order Management** - Create, view, and manage orders
+- **Real-time Updates** - Live order status tracking
 
-The key features of the protocol are **extreme flexibility** and **high gas efficiency**, which are achieved with the following features
+---
 
-**Basic features**
+## 🚀 Quick Start
 
-- Select an asset receiver for an order.
-- Choose whether to allow or disallow partial and multiple fills.
-- Define conditions that must be met before execution can proceed (e.g. stop-loss, take-profit orders).
-- Specify interactions (arbitrary maker's code) to execute before and after order filling.
-- Choose an approval scheme for token spend (approve, permit, permit2).
-- Request that WETH be unwrapped to ETH either before (to sell ETH) or after the swap (to receive ETH).
-- Make an order private by specifying the only allowed taker's address.
-- Set the order's expiration date.
-- Assign a nonce or epoch to the order for easy cancellation later.
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- MetaMask or compatible wallet
+- Sepolia testnet ETH
 
-**Advanced features**
+### Installation
 
-- Define a proxy to handle transfers of assets that are not compliant with `IERC20`, allowing the swapping of non-ERC20 tokens, such as ERC721 or ERC1155.
-- Define functions to calculate, on-chain, the exchange rate for maker and taker assets. These functions can be used to implement dutch auctions (where the rate decreases over time) or range orders (where the rate depends on the volume already filled), among others.
+1. **Clone the repository**
+```bash
+git clone https://github.com/0xDarkXnight/Unite-DeFi.git
+cd Unite-DeFi
+```
 
-### RFQ orders
+2. **Install dependencies**
+```bash
+# Root dependencies
+npm install
 
-Separate RFQ order are deprecated in v4. To create the most gas efficient order use a basic order without extensions.
+# Backend dependencies
+cd backend
+npm install
 
-### Supported tokens
+# Frontend dependencies
+cd ../frontend
+npm install
+```
 
-- ERC 20
-- ERC 721
-- ERC 1155
-- Other token standards could be supported via external extension
+3. **Environment Setup**
+```bash
+# Copy environment files
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 
-### Deployments & audits (Limit Orders Protocol v4):
+# Configure your environment variables
+```
 
-You can find 1inch Router v6 and 1inch Limit Order protocol v4 deployments here:
+4. **Start Development Servers**
+```bash
+# Terminal 1: Backend
+cd backend
+npm run dev
 
-**Ethereum mainnet:** [0x111111125421ca6dc452d289314280a0f8842a65](https://etherscan.io/address/0x111111125421ca6dc452d289314280a0f8842a65)
+# Terminal 2: Frontend
+cd frontend
+npm run dev
 
-**BSC mainnet:** [0x111111125421ca6dc452d289314280a0f8842a65](https://bscscan.com/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+# Terminal 3: Smart Contract Deployment (if needed)
+cd contracts_EVM
+npx hardhat deploy --network sepolia
+```
 
-**Polygon mainnet:** [0x111111125421ca6dc452d289314280a0f8842a65](https://polygonscan.com/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+---
 
-**Optimism Mainnet:** [0x111111125421ca6dc452d289314280a0f8842a65](https://optimistic.etherscan.io/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+## 🔧 Features
 
-**Arbitrum One:** [0x111111125421ca6dc452d289314280a0f8842a65](https://arbiscan.io/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+### Core Functionality
+- **Cross-Chain Dutch Auctions** - Dynamic pricing across networks
+- **Limit Orders** - Traditional limit order functionality
+- **Atomic Swaps** - Secure cross-chain token exchanges
+- **Escrow System** - Trustless cross-chain asset management
+- **Order Resolution** - Automated order execution
 
-**Gnosis Chain:** [0x111111125421ca6dc452d289314280a0f8842a65](https://blockscout.com/xdai/mainnet/address/0x111111125421ca6dc452d289314280a0f8842a65/transactions)
+### Advanced Features
+- **Dynamic Pricing** - Real-time price calculations
+- **Multi-Chain Support** - Extensible for multiple networks
+- **Gas Optimization** - Efficient transaction handling
+- **Security** - Comprehensive safety measures
 
-**Avalanche:** [0x111111125421ca6dc452d289314280a0f8842a65](https://snowtrace.io/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+---
 
-**Fantom:** [0x111111125421ca6dc452d289314280a0f8842a65](https://ftmscan.com/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+## 📚 Documentation
 
-**Aurora:** [0x111111125421ca6dc452d289314280a0f8842a65](https://aurorascan.dev/address/0x111111125421ca6dc452d289314280a0f8842a65)
+- **Smart Contracts**: See `contracts_EVM/` for contract documentation
+- **API Reference**: Backend API documentation in `backend/README.md`
+- **Frontend Guide**: UI/UX documentation in `frontend/README.md`
+- **Deployment**: See `contracts_EVM/deploy.js` for deployment scripts
 
-**Kaia:** [0x111111125421ca6dc452d289314280a0f8842a65](https://kaiascan.io/address/0x111111125421ca6dc452d289314280a0f8842a65)
+---
 
-**Base:** [0x111111125421ca6dc452d289314280a0f8842a65](https://basescan.org/address/0x111111125421ca6dc452d289314280a0f8842a65#code)
+## 🧪 Testing
 
-**zkSync Era:** [0x6fd4383cb451173d5f9304f041c7bcbf27d561ff](https://era.zksync.network/address/0x6fd4383cb451173d5f9304f041c7bcbf27d561ff#code)
+### Smart Contracts
+```bash
+cd contracts_EVM
+npx hardhat test
+```
 
-You can find audit reports on etherscan and in the separate [audit repository](https://github.com/1inch/1inch-audits/tree/master/Limit%20Order%20Protocol).
+### Backend API
+```bash
+cd backend
+npm test
+```
 
-### Utils library (Limit Orders Protocol v4)
-Plenty of utils that helps create & sign orders are available in our typescript utils library:
+### Frontend
+```bash
+cd frontend
+npm test
+```
 
-- [1inch Limit Order Utils](https://github.com/1inch/limit-order-protocol-utils)
+---
+
+## 🔒 Security
+
+**⚠️ Security Notice**
+- This is a testing implementation
+- Not audited for production use
+- Use only on testnets
+- Do not use with real funds
+
+### Security Features
+- EIP-712 signature verification
+- Reentrancy protection
+- Access control mechanisms
+- Comprehensive input validation
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our contributing guidelines:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+### Development Guidelines
+- Follow Solidity best practices
+- Write comprehensive tests
+- Update documentation
+- Use conventional commits
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- Built on the foundation of 1inch Limit Order Protocol
+- Inspired by cross-chain DeFi innovations
+- Community-driven development
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/0xDarkXnight/Unite-DeFi/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/0xDarkXnight/Unite-DeFi/discussions)
+- **Documentation**: See individual component READMEs
+
+---
+
+<div align="center">
+    <p><strong>🚧 This project is in active development. Use at your own risk. 🚧</strong></p>
+    <p>Built with ❤️ for the DeFi community</p>
+</div>
